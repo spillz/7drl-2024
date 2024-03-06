@@ -1,0 +1,26 @@
+{
+  "name": "7drl-2024",
+  "version": "0.0.1",
+  "description": "7DRL Entry 2024",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spillz/7drl-2024.git"
+  },
+  "author": "spillz aka foldedcard",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/spillz/7drl-2024/issues"
+  },
+  "homepage": "https://github.com/spillz/7drl-2024#readme",
+  "dependencies": {
+    "howler": "^2.2.4"
+  }
+}
