@@ -10,6 +10,7 @@ export const Facing = {
     west:3,
 }
 
+/**@readonly @enum {Vec2} */
 export const FacingVec = {
     0:vec2(0,-1),
     1:vec2(1,0),
@@ -17,6 +18,7 @@ export const FacingVec = {
     3:vec2(-1,0),
 }
 
+/**@readonly @enum {number} */
 export const binaryFacing = {
     0: 0b1,
     1: 0b10,
@@ -24,6 +26,11 @@ export const binaryFacing = {
     3: 0b1000,
 }
 
+/**
+ * 
+ * @param {Vec2} vec 
+ * @returns 
+ */
 function facingFromVec(vec) {
     if(this.vec[1]<0) return 0
     if(this.vec[0]>0) return 1

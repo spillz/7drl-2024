@@ -38,32 +38,71 @@ export const DecorationTiles = {
 }
 
 export const MansionTileIndexes = {
-    0: 65, //outside
+    0: 103, //outside
     1: 74, //floor
 }
+
+const wallSet1 = {
+    0b0001: 1056,
+    0b0010: 32,
+    0b0100: 1056,
+    0b1000: 32,
+    0b0101: 1056,
+    0b1010: 32,
+    0b0011: 33,
+    0b0110: 1057,
+    0b1100: 2081,
+    0b1001: 3105,
+    0b0111: 1058,
+    0b1011: 34,
+    0b1101: 3106,
+    0b1110: 2082,
+    0b1111: 35,
+}
+
+const wallSet2 = {
+    0b0001: 1056+32,
+    0b0010: 32+32,
+    0b0100: 1056+32,
+    0b1000: 32+32,
+    0b0101: 1056+32,
+    0b1010: 32+32,
+    0b0011: 33+32,
+    0b0110: 1057+32,
+    0b1100: 2081+32,
+    0b1001: 3105+32,
+    0b0111: 1058+32,
+    0b1011: 34+32,
+    0b1101: 3106+32,
+    0b1110: 2082+32,
+    0b1111: 35+32,
+}
+
+const wallSet3 = {
+    0b0001: 1056+64,
+    0b0010: 32+64,
+    0b0100: 1056+64,
+    0b1000: 32+64,
+    0b0101: 1056+64,
+    0b1010: 32+64,
+    0b0011: 33+64,
+    0b0110: 1057+64,
+    0b1100: 2081+64,
+    0b1001: 3105+64,
+    0b0111: 1058+64,
+    0b1011: 34+64,
+    0b1101: 3106+64,
+    0b1110: 2082+64,
+    0b1111: 35+64,
+}
+
 
 const MansionAutotiles = {
     wall: new eskv.sprites.AutoTiler('mansionWalls', 
         [LayoutTiles.wall], 
         [LayoutTiles.wall, LayoutTiles.doorway, LayoutTiles.window],
-        {
-//                0b0000: -1, //pillar
-            0b0001: 1056,
-            0b0010: 32,
-            0b0100: 1056,
-            0b1000: 32,
-            0b0101: 1056,
-            0b1010: 32,
-            0b0011: 33,
-            0b0110: 1057,
-            0b1100: 2081,
-            0b1001: 3105,
-            0b0111: 1058,
-            0b1011: 34,
-            0b1101: 3106,
-            0b1110: 2082,
-            0b1111: 32,
-    }),
+        wallSet3,
+    ),
     doorway:new eskv.sprites.AutoTiler('mansionDoorway',
         [LayoutTiles.doorway], 
         [LayoutTiles.wall, LayoutTiles.doorway, LayoutTiles.window],
@@ -204,7 +243,9 @@ function placeRoom(map, rect, rng) {
  * @param {eskv.rand.PRNG} rng
  */
 function generateMansionMap(map, rng) {
-    const tdim = new Vec2([80, 40]);
+    map.w = 80;
+    map.h = 40;
+    const tdim = new Vec2([map.w, map.h]);
     const tmap = map.tileMap;
     tmap.numLayers = 3;
     tmap.tileDim = tdim;
@@ -231,8 +272,8 @@ function generateMansionMap(map, rng) {
     const rSplit = w2 + rng.getRandomInt(w4, w2);
     const uSplit = rng.getRandomInt(h4, h2);
     const dSplit = rng.getRandomInt(uSplit+4,Math.min(uSplit+7, hh-1));
-    const cuSplit = Math.max(rng.getRandomInt(uSplit-6, uSplit-3), 0);
-    const cdSplit = Math.min(rng.getRandomInt(dSplit+3, dSplit+6), hh-1);
+    const cuSplit = Math.max(rng.getRandomInt(uSplit-3, uSplit), 0);
+    const cdSplit = Math.min(rng.getRandomInt(dSplit+3, dSplit), hh-1);
     const lSetback = -rng.getRandomInt(0, 5);
     const rSetback = -rng.getRandomInt(0, 5);
     const missing = rng.getRandomInt(0, 4); //0 = none, 1 = top, 2 = center, 3 = bottom
@@ -356,6 +397,7 @@ export class GameWindow extends eskv.Widget {
 
 export class MissionMap extends eskv.Widget {
     rng = new eskv.rand.PRNG_sfc32(); //.setPRNG('sfc32');
+    clipRegion = new Rect();
     tileMap = new LayeredTileMap();
     metaTileMap = new LayeredTileMap();
     /**@type {NPC[]} */
@@ -373,11 +415,28 @@ export class MissionMap extends eskv.Widget {
         this.children = [this.tileMap, this.entities, ...this.characters];
         if(props) this.updateProperties(props);
     }
+    on_parent(e,o,v) {
+        if(this.parent===null) return;
+        const scroller = /**@type {eskv.ScrollView}*/(this.parent);
+        scroller.bind('scrollX', (e,o,v)=>this.updateClipRegion(o));
+        scroller.bind('scrollY', (e,o,v)=>this.updateClipRegion(o));
+        scroller.bind('zoom', (e,o,v)=>this.updateClipRegion(o));
+        this.updateClipRegion(scroller);
+    }
     setupLevel() {
         generateMansionMap(this, this.rng);
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;
         this.setupLevel();
+    }
+    updateClipRegion(scroller) {
+        this.clipRegion = new Rect([
+            Math.floor(scroller.scrollX), 
+            Math.floor(scroller.scrollY), 
+            Math.ceil(scroller.w/scroller.zoom), 
+            Math.ceil(scroller.h/scroller.zoom)
+        ]);
+        this.tileMap.clipRegion = this.clipRegion;
     }
 }

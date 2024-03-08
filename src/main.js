@@ -33,26 +33,47 @@ Game:
                     const zoom = Math.floor(scroller.zoom + 1);
                     scroller.zoom = zoom<4? zoom:0.5;
                     this.text = String(scroller.zoom*100)+'%';
-        ScrollView:
-            id: 'scroller'
-            uiZoom: false
-            MissionMap:
-                id: 'MissionMap'
-                hints: {w:null, h:null}
-                w: 80
-                h: 40
-                spriteSheet: resources['sprites']
+        BoxLayout:
+            orientation: 'horizontal'
+            BoxLayout:
+                orientation: 'vertical'
+                hints: {h:null}
+                Label:
+                    text: 'Randy'
+                    hints: {h:'1'}
+                    align: 'left'
+                SpriteWidget:
+                    spriteSheet: resources['sprites']
+                    frames: [354]
+                    hints: {w:'4', h:'4'}
+                Widget:
+                    id: 'padding1'
+            ScrollView:
+                id: 'scroller'
+                uiZoom: false
+                hints: {w: '1h'}
+                unboundedH: true
+                unboundedW: true
+                MissionMap:
+                    id: 'MissionMap'
+                    hints: {w:null, h:null}
+                    w: 80
+                    h: 40
+                    spriteSheet: resources['sprites']
 `;
 
 class FPS extends eskv.Label {
     _counter = 0;
     _frames = 0;
     _worst = 300;
+    _tref = Date.now()
     /**@type {eskv.Label['update']} */
     update(app, millis) {
         super.update(app, millis);
-        this._counter+=millis;
+        const tref = Date.now()
+        this._counter += tref - this._tref;
         this._frames += 1;
+        this._tref= tref;
         const currentFPS = 1000/millis;
         if(currentFPS<this._worst) this._worst = currentFPS;
         if(this._counter>=1000) {
@@ -83,14 +104,11 @@ class Game extends eskv.App {
         if(char===null) return;
         if(ip.isKeyDown('w')) {
             char.move(Facing.north, mmap);
-        }
-        if(ip.isKeyDown('a')) {
+        } else if(ip.isKeyDown('a')) {
             char.move(Facing.west, mmap);
-        }
-        if(ip.isKeyDown('s')) {
+        } else if(ip.isKeyDown('s')) {
             char.move(Facing.south, mmap);
-        }
-        if(ip.isKeyDown('d')) {
+        } else if(ip.isKeyDown('d')) {
             char.move(Facing.east, mmap);
         }
     }

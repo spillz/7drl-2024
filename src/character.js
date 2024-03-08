@@ -23,11 +23,13 @@ export class Character extends Entity {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
         this.frames = [292];
+        this.w = 1;
+        this.h = 1;
         if(props) this.updateProperties(props);
     }
     /**
      * 
-     * @param {Facing} dir 
+     * @param {Facing} dir d
      * @param {MissionMap} mmap
      */
     move(dir, mmap) {
@@ -43,12 +45,18 @@ export class Character extends Entity {
         }
         const camera = /**@type {eskv.ScrollView}*/(eskv.App.get().findById('scroller'));
         if(camera) {
+            const target = this.gpos.add(FacingVec[dir].scale(5));
+            const dist = target.dist(this.gpos);
             //TODO: Put the camera a few spaces behind the player in the current facing
-            const X = Math.max(this.gpos[0]+0.5-camera.w/camera.zoom/2,0)
-            const Y = Math.max(this.gpos[1]+0.5-camera.h/camera.zoom/2,0)
+            const X = target[0]+0.5-camera.w/camera.zoom/2;
+            const Y = target[1]+0.5-camera.h/camera.zoom/2;
             const anim = new eskv.WidgetAnimation();
-            anim.add({ scrollX: X, scrollY: Y}, 250 );
+            anim.add({ scrollX: X, scrollY: Y}, 250*dist/2 );
             anim.start(camera);
         }
+    }
+    /**@type {eskv.sprites.SpriteWidget['draw']} */
+    draw(app, ctx) {
+        super.draw(app, ctx);
     }
 }
