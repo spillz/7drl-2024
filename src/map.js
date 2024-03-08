@@ -7,14 +7,16 @@ import { LayeredTileMap, SpriteSheet, TileMap } from "../eskv/lib/modules/sprite
 import { Character } from "./character.js";
 import { Entity } from "./entity.js";
 import { NPC } from "./npc.js";
+import { Facing, packValidFacing } from "./facing.js"
 
-export const TileProp = {
-    hidden: 0, //whether the characters have seen that part of the map
-    traversible: 1, //direction of traversibility
-    allowsSight: 2, //direction of sight
-    allowsSound: 3,
-    cover: 4, //direction that cover is provided from
-    moveCost: 5,
+export const MetaLayers = {
+    layout: 0, //Basic type of location
+    hidden: 1, //whether the characters have seen that part of the map
+    traversible: 2, //direction of traversibility
+    allowsSight: 3, //direction of sight
+    allowsSound: 4,
+    cover: 5, //direction that cover is provided from
+    moveCost: 6,
 }
 
 /**
@@ -28,6 +30,11 @@ export const LayoutTiles = {
     wall:3,
     doorway:4,
     window:5,
+}
+
+export const DecorationTiles = {
+    tree:163,
+
 }
 
 export const MansionTileIndexes = {
@@ -250,13 +257,13 @@ function generateMansionMap(map, rng) {
     //Right lower
     placeRoom(mmap, new Rect([hx+rSplit, hy+rSetback+dSplit, hw-rSplit+1, hh-dSplit+1]), rng);
 
-    /**@type {Entity[]} */
+    /**@type {[number, number][]} */
     const trees = [];
     for(let pos of mmap.iterAll()) {
         const index = mmap.get(pos);
         if(index === LayoutTiles.outside) {
             if(rng.random()>0.95) {
-                trees.push(new Entity({spriteSheet:map.spriteSheet, frames:[163], w:'1',h:'1', x:pos[0], y:pos[1]}));
+                trees.push(pos);
             }
         }
         if(index in MansionTileIndexes) {
@@ -267,9 +274,13 @@ function generateMansionMap(map, rng) {
             MansionAutotiles.doorway.autoTile(vpos, mmap, tmap);
             MansionAutotiles.window.autoTile(vpos, mmap, tmap);
         }
+        const traversible = index===LayoutTiles.wall?0:0b1111;
+        mmap.setInLayer(MetaLayers.traversible, pos, traversible)
     }
-    map.entities._children = trees;
-    map.entities._needsLayout = true;
+    tmap.activeLayer = 1;
+    for(let p of trees) {
+        tmap.set(p, DecorationTiles.tree);
+    }
 }
 
 /**
@@ -351,12 +362,15 @@ export class MissionMap extends eskv.Widget {
     enemies = [];
     entities = new eskv.Widget({hints:{h:1, w:1}});
     /**@type {Character[]} */
-    characters = [];
+    characters = [
+        new Character({id:'Randy', x:0,y:0}),
+        new Character({id:'Maria', })
+    ];
     /**@type {SpriteSheet|null} */
     spriteSheet = null;
     constructor(props=null) {
         super();
-        this.children = [this.tileMap, this.entities];
+        this.children = [this.tileMap, this.entities, ...this.characters];
         if(props) this.updateProperties(props);
     }
     setupLevel() {
