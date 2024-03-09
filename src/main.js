@@ -1,9 +1,14 @@
 //@ts-check
-import * as eskv from "../eskv/lib/eskv.js";
-import { parse } from "../eskv/lib/modules/markup.js";
+
+import * as eskv from "eskv";
+import {parse} from "eskv/lib/modules/markup.js";
 import { MissionMap } from "./map.js";
 import { Character} from "./character.js";
 import { Facing } from "./facing.js";
+
+//@ts-ignore
+import spriteUrl from '/images/spritesheet.png';
+import { Action } from "./action.js";
 
 //The markup specifies the overall UI layout in the App
 const markup = `
@@ -26,7 +31,7 @@ Game:
                 align: 'right'
             Button: 
                 text: '100%'
-                hints: {w: '4'}
+                hints: {w: '3'}
                 on_press:
                     const scroller = window.app.findById('scroller');
                     if(!scroller) return;
@@ -37,28 +42,73 @@ Game:
             orientation: 'horizontal'
             BoxLayout:
                 orientation: 'vertical'
-                hints: {h:null}
+                hints: {w:'4'}
                 Label:
-                    text: 'Randy'
+                    text:\`Randy \${Randy.gpos}\`
                     hints: {h:'1'}
                     align: 'left'
                 SpriteWidget:
                     spriteSheet: resources['sprites']
                     frames: [354]
-                    hints: {w:'4', h:'4'}
+                    hints: {w:'3', h:'3'}
+                Label:
+                    text:'1: Fire rifle'
+                    hints: {h:'1'}
+                    align: 'left'
+                Action:
+                    frames: [736]
+                    labelText: 'Fire rifle'
+                    spriteSheet: resources['sprites']
+                    hints: {w:'3', h:'3'}
+                Label:
+                    text:'2: Set C4'
+                    hints: {h:'1'}
+                    align: 'left'
+                Action:
+                    frames: [739]
+                    labelText: 'Set C4'
+                    spriteSheet: resources['sprites']
+                    hints: {w:'3', h:'3'}
+                Label:
+                    text:'3: Throw grenade'
+                    hints: {h:'1'}
+                    align: 'left'
+                Action:
+                    frames: [738]
+                    labelText: 'Throw Grenade'
+                    spriteSheet: resources['sprites']
+                    hints: {w:'3', h:'3'}
+                Label:
+                    text:'4: Use halligan'
+                    hints: {h:'1'}
+                    align: 'left'
+                Action:
+                    frames: [740]
+                    labelText: 'Use Halligan'
+                    spriteSheet: resources['sprites']
+                    hints: {w:'3', h:'3'}
+            BoxLayout:
+                hints: {w:'4', h:null}
+                padding: '2'
+                orientation: 'vertical'
                 Widget:
-                    id: 'padding1'
+                    id: 'padding2'
+                Label:
+                    text:\`Maria \${Maria.status}\`
+                    wrap: true;
+                    hints: {h:'1'}
+                    align: 'right'
+                SpriteWidget:
+                    spriteSheet: resources['sprites']
+                    frames: [450]
+                    hints: {w:'3', h:'3'}
             ScrollView:
                 id: 'scroller'
                 uiZoom: false
-                hints: {w: '1h'}
-                unboundedH: true
-                unboundedW: true
+                hints: {h:'20'}
                 MissionMap:
                     id: 'MissionMap'
                     hints: {w:null, h:null}
-                    w: 80
-                    h: 40
                     spriteSheet: resources['sprites']
 `;
 
@@ -88,7 +138,7 @@ class FPS extends eskv.Label {
 class Game extends eskv.App {
     constructor(props={}) {
         super();
-        Game.resources['sprites'] = new eskv.sprites.SpriteSheet('/images/spritesheet.png', 16);
+        Game.resources['sprites'] = new eskv.sprites.SpriteSheet(spriteUrl, 16);
         this.continuousFrameUpdates = true;
         if(props) this.updateProperties(props);
     }
@@ -114,6 +164,7 @@ class Game extends eskv.App {
     }
 }
 
+Game.registerClass('Action', Action, 'Label');
 Game.registerClass('FPS', FPS, 'Label');
 Game.registerClass('Game', Game, 'App');
 Game.registerClass('MissionMap', MissionMap, 'Widget');

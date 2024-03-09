@@ -1,9 +1,10 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {Rect, Vec2} from "../eskv/lib/eskv.js";
-import { parse } from "../eskv/lib/modules/markup.js";
-import { LayeredTileMap, SpriteSheet, TileMap } from "../eskv/lib/modules/sprites.js";
+import * as eskv from "eskv";
+import {Rect, Vec2} from "eskv";
+import {parse} from "eskv/lib/modules/markup.js";
+import {SpriteWidget} from "eskv/lib/modules/sprites.js";
+import { LayeredTileMap, SpriteSheet, TileMap } from "eskv/lib/modules/sprites.js";
 import { Character } from "./character.js";
 import { Entity } from "./entity.js";
 import { NPC } from "./npc.js";
@@ -11,12 +12,13 @@ import { Facing, packValidFacing } from "./facing.js"
 
 export const MetaLayers = {
     layout: 0, //Basic type of location
-    hidden: 1, //whether the characters have seen that part of the map
-    traversible: 2, //direction of traversibility
-    allowsSight: 3, //direction of sight
-    allowsSound: 4,
-    cover: 5, //direction that cover is provided from
-    moveCost: 6,
+    seen: 1, //whether the characters have seen that part of the map
+    visible: 2, //whether the characters can currently see that part of the map
+    traversible: 3, //direction of traversibility
+    allowsSight: 4, //direction of sight
+    allowsSound: 5,
+    cover: 6, //direction that cover is provided from
+    moveCost: 7,
 }
 
 /**
@@ -245,6 +247,7 @@ function placeRoom(map, rect, rng) {
 function generateMansionMap(map, rng) {
     map.w = 80;
     map.h = 40;
+    const [w,h] = [map.w, map.h];
     const tdim = new Vec2([map.w, map.h]);
     const tmap = map.tileMap;
     tmap.numLayers = 3;
@@ -252,7 +255,7 @@ function generateMansionMap(map, rng) {
     tmap.activeLayer = 0;
 
     const mmap = map.metaTileMap;
-    mmap.numLayers = 3;
+    mmap.numLayers = 8;
     mmap.tileDim = tdim;
     mmap.activeLayer = 0; //Ground/flooring/wall layout layer
     for (const p of mmap.iterAll()) {
@@ -300,6 +303,8 @@ function generateMansionMap(map, rng) {
 
     /**@type {[number, number][]} */
     const trees = [];
+    let i=0;
+
     for(let pos of mmap.iterAll()) {
         const index = mmap.get(pos);
         if(index === LayoutTiles.outside) {
@@ -316,12 +321,25 @@ function generateMansionMap(map, rng) {
             MansionAutotiles.window.autoTile(vpos, mmap, tmap);
         }
         const traversible = index===LayoutTiles.wall?0:0b1111;
-        mmap.setInLayer(MetaLayers.traversible, pos, traversible)
+        mmap.setInLayer(MetaLayers.traversible, pos, traversible);
+        i++;
     }
     tmap.activeLayer = 1;
+    const sightData = mmap._layerData[MetaLayers.allowsSight];
+    mmap.activeLayer = MetaLayers.layout;
+    for(let p of mmap.iterAll()) {
+        mmap.setInLayer(MetaLayers.seen, p, (mmap.numInRange(p,[LayoutTiles.outside],1.5)>0)?1:0);
+        const layout = mmap.getFromLayer(MetaLayers.layout, p);
+        const ind = p[0]+p[1]*w;
+        sightData[ind] |= (layout===LayoutTiles.wall?0:0b1111); //see through if not a wall
+    }
     for(let p of trees) {
         tmap.set(p, DecorationTiles.tree);
+        const ind = p[0]+p[1]*w;
+        sightData[ind] |= 0b11110000; //provides cover
     }
+    tmap._vLayer = mmap._layerData[MetaLayers.seen];
+    tmap._aLayer = mmap._layerData[MetaLayers.visible];
 }
 
 /**
@@ -413,6 +431,7 @@ export class MissionMap extends eskv.Widget {
     constructor(props=null) {
         super();
         this.children = [this.tileMap, this.entities, ...this.characters];
+        this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
     on_parent(e,o,v) {
@@ -422,13 +441,13 @@ export class MissionMap extends eskv.Widget {
         scroller.bind('scrollY', (e,o,v)=>this.updateClipRegion(o));
         scroller.bind('zoom', (e,o,v)=>this.updateClipRegion(o));
         this.updateClipRegion(scroller);
+        this.setupLevel();
     }
     setupLevel() {
         generateMansionMap(this, this.rng);
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;
-        this.setupLevel();
     }
     updateClipRegion(scroller) {
         this.clipRegion = new Rect([
