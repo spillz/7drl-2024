@@ -1,9 +1,9 @@
 //@ts-check
 
-import * as eskv from "eskv";
-import {Rect, Vec2} from "eskv";
-import {parse} from "eskv/lib/modules/markup.js";
-import { SpriteWidget } from "eskv/lib/modules/sprites.js";
+import * as eskv from "../eskv/lib/eskv.js";
+import {Rect, Vec2} from "../eskv/lib/eskv.js";
+import {parse} from "../eskv/lib/modules/markup.js";
+import { SpriteWidget } from "../eskv/lib/modules/sprites.js";
 
 export class Action extends SpriteWidget {
     constructor(props={}) {

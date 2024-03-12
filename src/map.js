@@ -1,14 +1,9 @@
 //@ts-check
 
-import * as eskv from "eskv";
-import {Rect, Vec2} from "eskv";
-import {parse} from "eskv/lib/modules/markup.js";
-import {SpriteWidget} from "eskv/lib/modules/sprites.js";
-import { LayeredTileMap, SpriteSheet, TileMap } from "eskv/lib/modules/sprites.js";
-import { Character } from "./character.js";
-import { Entity } from "./entity.js";
-import { NPC } from "./npc.js";
-import { Facing, packValidFacing } from "./facing.js"
+import * as eskv from "../eskv/lib/eskv.js";
+import {Rect, Vec2} from "../eskv/lib/eskv.js";
+import { LayeredTileMap, SpriteSheet, TileMap } from "../eskv/lib/modules/sprites.js";
+import { Character, PlayerCharacter } from "./character.js";
 
 export const MetaLayers = {
     layout: 0, //Basic type of location
@@ -216,10 +211,10 @@ function placeWalledRect(map, rect) {
     const w = rect.w-1;
     const h = rect.h-1;
     const p = rect.pos;
-    for(let pos of map.iterBetween(p, p.add([w,0]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.iterBetween(p, p.add([0,h]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.iterBetween(p.add([0,h]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.iterBetween(p.add([w,0]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p, p.add([w,0]))) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p, p.add([0,h]))) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([0,h]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([w,0]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
 }
 
 /**
@@ -229,7 +224,7 @@ function placeWalledRect(map, rect) {
  * @param {eskv.rand.PRNG} rng 
  */
 function placeRoom(map, rect, rng) {
-    for(let p of map.iterRect(rect.grow(-1))) {
+    for(let p of map.data.iterRect(rect.grow(-1))) {
         map.set(p, LayoutTiles.floor);
     }
     placeWalledRect(map, rect);
@@ -258,7 +253,7 @@ function generateMansionMap(map, rng) {
     mmap.numLayers = 8;
     mmap.tileDim = tdim;
     mmap.activeLayer = 0; //Ground/flooring/wall layout layer
-    for (const p of mmap.iterAll()) {
+    for (const p of mmap.data.iterAll()) {
         mmap.set(p, LayoutTiles.outside);
     }
 
@@ -305,7 +300,7 @@ function generateMansionMap(map, rng) {
     const trees = [];
     let i=0;
 
-    for(let pos of mmap.iterAll()) {
+    for(let pos of mmap.data.iterAll()) {
         const index = mmap.get(pos);
         if(index === LayoutTiles.outside) {
             if(rng.random()>0.95) {
@@ -327,8 +322,8 @@ function generateMansionMap(map, rng) {
     tmap.activeLayer = 1;
     const sightData = mmap._layerData[MetaLayers.allowsSight];
     mmap.activeLayer = MetaLayers.layout;
-    for(let p of mmap.iterAll()) {
-        mmap.setInLayer(MetaLayers.seen, p, (mmap.numInRange(p,[LayoutTiles.outside],1.5)>0)?1:0);
+    for(let p of mmap.data.iterAll()) {
+        mmap.setInLayer(MetaLayers.seen, p, (mmap.data.numInRange(p,[LayoutTiles.outside],1.5)>0)?1:0);
         const layout = mmap.getFromLayer(MetaLayers.layout, p);
         const ind = p[0]+p[1]*w;
         sightData[ind] |= (layout===LayoutTiles.wall?0:0b1111); //see through if not a wall
@@ -351,7 +346,7 @@ function generateMansionMap(map, rng) {
  */
 function drawFloorUnderWall(ctx, spriteSheet, mmap, tmap) {
     let i = 0;
-    for(let pos of mmap.iterAll()) {
+    for(let pos of mmap.data.iterAll()) {
         const mtile = mmap.get(pos)
         if(mtile>=LayoutTiles.wall) {
             for(let adj of [[0,1],[1,0],[0,-1],[-1,0]]) {
@@ -418,44 +413,44 @@ export class MissionMap extends eskv.Widget {
     clipRegion = new Rect();
     tileMap = new LayeredTileMap();
     metaTileMap = new LayeredTileMap();
-    /**@type {NPC[]} */
+    /**@type {Character[]} */
     enemies = [];
     entities = new eskv.Widget({hints:{h:1, w:1}});
     /**@type {Character[]} */
-    characters = [
-        new Character({id:'Randy', x:0,y:0}),
-        new Character({id:'Maria', })
+    playerCharacters = [
+        new PlayerCharacter({id:'Randy', x:0,y:0, activeCharacter:true}),
+        new PlayerCharacter({id:'Maria', activeCharacter:false})
     ];
     /**@type {SpriteSheet|null} */
     spriteSheet = null;
     constructor(props=null) {
         super();
-        this.children = [this.tileMap, this.entities, ...this.characters];
+        this.children = [this.tileMap, this.entities, ...this.playerCharacters];
         this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
+    setupLevel() {
+        generateMansionMap(this, this.rng);
+        this.playerCharacters[0].setupForLevelStart(this);
+    }
+    on_spriteSheet() {
+        this.tileMap.spriteSheet = this.spriteSheet;
+        this.setupLevel();
+    }
     on_parent(e,o,v) {
-        if(this.parent===null) return;
-        const scroller = /**@type {eskv.ScrollView}*/(this.parent);
+        const scroller = this.parent;
+        if(!(scroller instanceof eskv.ScrollView)) return;
         scroller.bind('scrollX', (e,o,v)=>this.updateClipRegion(o));
         scroller.bind('scrollY', (e,o,v)=>this.updateClipRegion(o));
         scroller.bind('zoom', (e,o,v)=>this.updateClipRegion(o));
         this.updateClipRegion(scroller);
-        this.setupLevel();
-    }
-    setupLevel() {
-        generateMansionMap(this, this.rng);
-    }
-    on_spriteSheet() {
-        this.tileMap.spriteSheet = this.spriteSheet;
     }
     updateClipRegion(scroller) {
-        this.clipRegion = new Rect([
-            Math.floor(scroller.scrollX), 
-            Math.floor(scroller.scrollY), 
+        this.tileMap.clipRegion = new Rect([
+            Math.floor(scroller._scrollX), 
+            Math.floor(scroller._scrollY), 
             Math.ceil(scroller.w/scroller.zoom), 
             Math.ceil(scroller.h/scroller.zoom)
         ]);
-        this.tileMap.clipRegion = this.clipRegion;
     }
 }

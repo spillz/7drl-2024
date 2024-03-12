@@ -21,8 +21,6 @@
   },
   "homepage": "https://github.com/spillz/7drl-2024#readme",
   "dependencies": {
-    "eskv": "file:../eskv",
-    "howler": "^2.2.4",
-    "rollup-plugin-visualizer": "^5.12.0"
+    "howler": "^2.2.4"
   }
 }
