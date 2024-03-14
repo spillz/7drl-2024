@@ -4,7 +4,7 @@ import * as eskv from "../eskv/lib/eskv.js";
 import {vec2, Vec2, Grid2D} from "../eskv/lib/eskv.js";
 import { Action, ActionData } from "./action.js";
 import { Entity } from "./entity.js";
-import { MissionMap, MetaLayers } from "./map.js";
+import { MissionMap, MetaLayers, LayoutTiles } from "./map.js";
 import { Facing, FacingVec, binaryFacing, facingFromVec } from "./facing.js"
 import { TileMap } from "../eskv/lib/modules/sprites.js";
 
@@ -13,32 +13,109 @@ const animations = {
 }
 
 /**
- * Returns a BFS distance field on a grid-based TileMap
+ * Returns a BFS-style distance field on a grid-based TileMap
  * for an input costGrid where the cost in the destination
  * cell in `costGrid` applies to all orthogonally adjacent cells.
+ * Note that each check of adjacent calls in the current canddiate
+ * pool does not exclude already visited cells to allow for the
+ * fact that high cost cells may have been visited at an earlier
+ * step. This is probably slightly more efficient than maintaining
+ * a priority queue in the Dijksta or A* methods.
  * @param {Grid2D} costGrid 
  * @param {Vec2} origin 
  * @returns 
  */
 function costedBFS(costGrid, origin) {
-    let distances = new TileMap({tileDim:costGrid.tileDim});
+    let distances = new Grid2D(costGrid.tileDim).fill(Infinity);
     distances.set(origin, 0);
     let candidates = [origin];
     while (candidates.length > 0) {
         let newCandidates = [];
-        candidates.forEach((pos) => {
+        for(let pos of candidates) {
             for(let npos of costGrid.iterAdjacent(pos)) {
                 let cost = costGrid.get(npos);
-                if (distances.get(npos) + cost < distances.get(npos)) {
+                if (distances.get(pos) + cost < distances.get(npos)) {
                     distances.set(npos, distances.get(pos) + cost);
                     newCandidates.push(npos);
                 }
             }
-        });
+        };
         candidates = newCandidates;
     }
     return distances;
 }
+
+/**
+ * Returns a BFS-style distance field on a grid-based TileMap
+ * for an input costGrid where the cost in the destination
+ * cell in `costGrid` applies to all orthogonally adjacent cells.
+ * Note that each check of adjacent calls in the current canddiate
+ * pool does not exclude already visited cells to allow for the
+ * fact that high cost cells may have been visited at an earlier
+ * step. This is probably slightly more efficient than maintaining
+ * a priority queue in the Dijksta or A* methods.
+ * @param {Grid2D} costGrid 
+ * @param {Vec2} origin 
+ * @param {Vec2} dest 
+ * @returns 
+ */
+function costedBFSPath(costGrid, origin, dest) {
+    if(origin.equals(dest)) return [dest];
+    let distances = new Grid2D(costGrid.tileDim).fill(Infinity);
+    distances.set(origin, 0);
+    let candidates = [origin];
+    /**@type {[Vec2, number][]} */
+    let deferredCandidates = [];
+    let done = false;
+    while (candidates.length > 0 && !done) {
+        let newCandidates = [];
+        for(let pos of candidates) {
+            for(let npos of costGrid.iterAdjacent(pos)) {
+                let cost = costGrid.get(npos);
+                if (distances.get(pos) + cost < distances.get(npos)) {
+                    if(npos.equals(dest)) done = true;
+                    distances.set(npos, distances.get(pos) + cost);
+                    if(cost>1 && !done) {
+                        deferredCandidates.push([npos, cost]);
+                    } else {
+                        newCandidates.push(npos);
+                    }
+                }    
+            }
+        }
+        /**@type {[Vec2,number][]} */
+        const newDeferred = [];
+        for(let posCost of deferredCandidates) {
+            if(posCost[1]>1) {
+                posCost[1]--;
+                newDeferred.push(posCost);
+            }
+            else {
+                newCandidates.push(posCost[0]);
+            }
+        }
+        deferredCandidates = newDeferred;
+        candidates = newCandidates;
+    }
+    const route = [];
+    if(distances.get(dest)===Infinity) return route;
+    let current = dest;
+    while(!current.equals(origin)) {
+        let lowest = Infinity
+        let nextCurrent = null;
+        for(let candidate of distances.iterAdjacent(current)) {
+            const dist = distances.get(candidate);
+            if(dist <lowest) {
+                lowest = dist;
+                nextCurrent = candidate;
+            }
+        }
+        route.unshift(current);
+        if(nextCurrent!==null) current = nextCurrent;
+    }
+    return route;
+}
+
 
 /**@typedef {'Patrolling'|'Sleeping'|'Hunting'|'Hiding'|'Fleeing'} CharacterStates */
 
@@ -51,24 +128,76 @@ export class Character extends Entity {
     state = 'Patrolling';
     /**Grid location of the character on the map */
     gpos = vec2(0,0);
+    /**@type {eskv.Vec2[]} Array of waypoints that character will move along in patrol mode*/
+    patrolRoute = [];
+    /** Index of the current target on the patrol route*/
+    patrolTarget = -1;
+    /** Number of actions remaining this turn */
+    actionsThisTurn = 2;
+    /** true if player can see this character */
+    visibleToPlayer = false;
     /** @type {Action[]} */
     history = [];
     suppressed = false;
     /**@type {Set<eskv.Vec2>} */
     _coverPositions = new Set();
     _visibleLayer = new Grid2D();
-    activeCharacter = true;
+    activeCharacter = false;
     constructor(props={}) {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
-        this.frames = [292];
+        this.frames = [484];
         this.w = 1;
         this.h = 1;
         if(props) this.updateProperties(props);
     }
     /**
      * 
-     * @param {Facing} dir d
+     * @param {MissionMap} map 
+     */
+    setupForLevelStart(map, rng) {
+        this._coverPositions = new Set(); // set of positions that have cover from the current location
+        this._visibleLayer = new Grid2D([map.w, map.h]).fill(0);
+        let i = 0;
+        let a = eskv.vec2(1,1);
+        let b = eskv.vec2(1,1);
+        while(i<1000) {
+            i++;
+            a = eskv.v2(rng.getRandomPos(map.w, map.h));
+            if(map.metaTileMap.layer[MetaLayers.layout].get(a)===LayoutTiles.floor) break; 
+        }
+        i = 0;
+        while(i<1000) {
+            i++;
+            b = eskv.v2(rng.getRandomPos(map.w, map.h));
+            if(map.metaTileMap.layer[MetaLayers.layout].get(b)===LayoutTiles.floor
+                &&!b.equals(a)) break; 
+        }
+        this.patrolRoute = [a, b];
+        this.gpos = eskv.v2(b);
+        [this.x, this.y] = this.gpos;
+        const lookup = {
+            'Alfred': [832,2880],
+            'Bennie': [832+1,2880+1],
+            'Charlie': [832+2,2880+2],
+            'Devon': [832+3,2880+3],
+        }
+        map.tileMap.layer[1].set(a,lookup[this.id][0]);
+        map.tileMap.layer[1].set(b,lookup[this.id][1]);
+    }
+    /**
+     * @param {MissionMap} mmap
+     */
+    rest(mmap) {
+        this.actionsThisTurn--;
+        if(this.activeCharacter) {
+            this.updateLoS(mmap);
+            this.updateCamera(mmap);
+        }
+    }
+    /**
+     * 
+     * @param {Facing} dir direction to move in
      * @param {MissionMap} mmap
      */
     move(dir, mmap) {
@@ -76,11 +205,17 @@ export class Character extends Entity {
         const tmap = mmap.metaTileMap;
         const traverse = tmap.getFromLayer(MetaLayers.traversible, npos)
         this.facing = dir;
-        if(traverse&binaryFacing[dir]) {
+        //TODO: Make characters swap if they are stuck in a faceoff
+        if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos), false)) {
             this.gpos = npos;
-            const anim = new eskv.WidgetAnimation();
-            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250 );
-            anim.start(this);
+            if(this._animation && !this.activeCharacter) {
+                this._animation.add({ x: this.gpos[0], y: this.gpos[1]}, 250/2 );
+            } else {
+                const anim = new eskv.WidgetAnimation();
+                anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250/2 );
+                anim.start(this);    
+            }
+            this.actionsThisTurn--;
         }
         if(this.activeCharacter) {
             this.updateLoS(mmap);
@@ -94,7 +229,6 @@ export class Character extends Entity {
      * @param {Vec2} position 
      */
     useAction(actionId, position, mode) {
-
     }
     /**
      * 
@@ -132,10 +266,10 @@ export class Character extends Entity {
                 else if(dir0[0]<0 && sight0&0b1000) canContinue = true; //W
                 if(!coversNext) {
                     this._visibleLayer[p0[0]+p0[1]*mmap.w] = 1;
-                    mmap.setInLayer(MetaLayers.seen, p0, 1);
+                    if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);
                     if(altSight) {
                         this._visibleLayer[p1[0]+p1[1]*mmap.w] = 1;
-                        mmap.setInLayer(MetaLayers.seen, p1, 1);    
+                        if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p1, 1);    
                     }
                 } else {
                     this._coverPositions.add(p0);
@@ -174,29 +308,53 @@ export class Character extends Entity {
     }
     /**
      * 
-     * @param {MissionMap} map 
-     */
-    setupForLevelStart(map) {
-        this._coverPositions = new Set(); // set of positions that have cover from the current location
-        this._visibleLayer = new Grid2D([map.w, map.h]).fill(0);
-    }
-    /**
-     * 
      * @param {Action} action 
      * @param {MissionMap} mmap 
      */
     takeAction(action, mmap) {
         this.history.push(action);
     }
+    /**
+     * 
+     * @param {MissionMap} mmap 
+     * @returns 
+     */
+    takeTurn(mmap) {
+        mmap.updateCharacterVisibility(true);
+        while(this.actionsThisTurn>0) {
+            if(this.state==='Patrolling') {
+                if(this.patrolTarget<0) this.patrolTarget=0;
+                if(this.patrolRoute.length===0) return;
+                if(this.gpos.equals(this.patrolRoute[this.patrolTarget])) this.patrolTarget = (this.patrolTarget+1)%this.patrolRoute.length;
+                const src = this.gpos; 
+                const dest = this.patrolRoute[this.patrolTarget];
+                const moveCostGrid = new Grid2D([mmap.w, mmap.h]);
+                mmap.metaTileMap.layer[MetaLayers.layout].forEach((v,i)=>{
+                    moveCostGrid[i] = v===LayoutTiles.wall?Infinity:1;
+                });
+                for(let e of mmap.characters) {
+                    if(e!==this) moveCostGrid.set(e.gpos, moveCostGrid.get(e.gpos)+4);
+                }
+                const route = costedBFSPath(moveCostGrid, src, dest);
+                if(route.length>0) {
+                    //First action spent moving
+                    this.move(facingFromVec(route[0].sub(this.gpos)), mmap);
+                    this.history.push(new Action());    
+                }
+                this.actionsThisTurn-=1; //Spend second action doing nothing
+                mmap.updateCharacterVisibility(true);
+            }    
+        }
+        this.actionsThisTurn = 2;
+    }
     /**@type {eskv.sprites.SpriteWidget['draw']} */
     draw(app, ctx) {
-        super.draw(app, ctx);
+        if(this.activeCharacter || this.visibleToPlayer) {
+            super.draw(app, ctx);
+        }
     }
 
 }
-
-
-
 
 export class PlayerCharacter extends Character {
     constructor(props={}) {
@@ -224,6 +382,5 @@ export class PlayerCharacter extends Character {
      * @param {MissionMap} mmap 
      */
     takeAction(action, mmap) {
-        this.history.push(action);
     }
 }

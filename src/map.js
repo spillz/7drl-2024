@@ -228,10 +228,14 @@ function placeRoom(map, rect, rng) {
         map.set(p, LayoutTiles.floor);
     }
     placeWalledRect(map, rect);
-    const doorPosX = rect[0]+1+rng.getRandomInt(rect[2]-1);
-    const doorPosY = rect[1]+1+rng.getRandomInt(rect[3]-1);
-    map.set(new Vec2([doorPosX, rect[1]+(rng.random()>0.5?rect[3]-1:0)]), LayoutTiles.doorway);
-    map.set(new Vec2([rect[0]+(rng.random()>0.5?rect[2]-1:0), doorPosY]), LayoutTiles.doorway);
+    const doorPosX1 = rect[0]+1+rng.getRandomInt(rect[2]-2);
+    const doorPosX2 = rect[0]+1+rng.getRandomInt(rect[2]-2);
+    const doorPosY1 = rect[1]+1+rng.getRandomInt(rect[3]-2);
+    const doorPosY2 = rect[1]+1+rng.getRandomInt(rect[3]-2);
+    map.set(new Vec2([doorPosX1, rect[1]]), LayoutTiles.doorway);
+    map.set(new Vec2([doorPosX2, rect[1]+rect[3]-1]), LayoutTiles.doorway);
+    map.set(new Vec2([rect[0], doorPosY1]), LayoutTiles.doorway);
+    map.set(new Vec2([rect[0]+rect[2]-1, doorPosY2]), LayoutTiles.doorway);
 }
 
 /**
@@ -414,24 +418,33 @@ export class MissionMap extends eskv.Widget {
     tileMap = new LayeredTileMap();
     metaTileMap = new LayeredTileMap();
     /**@type {Character[]} */
-    enemies = [];
+    enemies = [
+        new Character({id:'Alfred'}),
+        new Character({id:'Bennie'}),
+        new Character({id:'Charlie'}),
+        new Character({id:'Devon'}),
+    ];
     entities = new eskv.Widget({hints:{h:1, w:1}});
     /**@type {Character[]} */
     playerCharacters = [
         new PlayerCharacter({id:'Randy', x:0,y:0, activeCharacter:true}),
         new PlayerCharacter({id:'Maria', activeCharacter:false})
     ];
+    characters = [...this.enemies, ...this.playerCharacters]
+    /**@type {Character|null} */
+    activeCharacter = this.playerCharacters[0];
     /**@type {SpriteSheet|null} */
     spriteSheet = null;
     constructor(props=null) {
         super();
-        this.children = [this.tileMap, this.entities, ...this.playerCharacters];
+        this.children = [this.tileMap, this.entities, ...this.enemies, ...this.playerCharacters];
         this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
     setupLevel() {
         generateMansionMap(this, this.rng);
-        this.playerCharacters[0].setupForLevelStart(this);
+        this.playerCharacters[0].setupForLevelStart(this, this.rng);
+        this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;
@@ -452,5 +465,16 @@ export class MissionMap extends eskv.Widget {
             Math.ceil(scroller.w/scroller.zoom), 
             Math.ceil(scroller.h/scroller.zoom)
         ]);
+    }
+    /**
+     * 
+     * @param {boolean} refresh 
+     */
+    updateCharacterVisibility(refresh=false) {
+        const char = this.activeCharacter;
+        for(let e of this.enemies) {
+            if(refresh) e.visibleToPlayer = false;
+            e.visibleToPlayer = e.visibleToPlayer || this.activeCharacter?._visibleLayer.get(e.gpos)===1;
+        }
     }
 }

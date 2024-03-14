@@ -287,6 +287,7 @@ class Game extends eskv.App {
         const mmap = /**@type {MissionMap|null}*/(this.findById('MissionMap'))
         if(mmap===null) return;
         const char = /**@type {Character|null}*/(this.findById('Randy'));
+
         if(char===null) return;
         if(ip.isKeyDown('w')) {
             char.move(Facing.north, mmap);
@@ -296,6 +297,18 @@ class Game extends eskv.App {
             char.move(Facing.south, mmap);
         } else if(ip.isKeyDown('d')) {
             char.move(Facing.east, mmap);
+        } else if(ip.isKeyDown(' ')) {
+            char.rest(mmap);
+        } else {
+            return;
+        }
+        mmap.updateCharacterVisibility();
+        if(char.actionsThisTurn===0) {
+            for(let e of mmap.enemies) {
+                e.takeTurn(mmap);
+            }
+            char.actionsThisTurn=2;
+            mmap.updateCharacterVisibility(true);
         }
     }
 }
