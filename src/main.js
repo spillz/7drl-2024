@@ -45,6 +45,7 @@ Game:
                 Button: 
                     text: '100%'
                     hints: {w: '3'}
+                    id: 'zoomButton'
                     on_press:
                         const scroller = window.app.findById('scroller');
                         if(!scroller) return;

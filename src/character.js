@@ -139,6 +139,8 @@ export class Character extends Entity {
     /** @type {Action[]} */
     history = [];
     suppressed = false;
+    /**Cumulative # of actions where the character's movement has been impeded */
+    movementBlockedCount = 0;
     /**@type {Set<eskv.Vec2>} */
     _coverPositions = new Set();
     _visibleLayer = new Grid2D();
@@ -208,14 +210,13 @@ export class Character extends Entity {
         //TODO: Make characters swap if they are stuck in a faceoff
         if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos), false)) {
             this.gpos = npos;
-            if(this._animation && !this.activeCharacter) {
-                this._animation.add({ x: this.gpos[0], y: this.gpos[1]}, 250/2 );
-            } else {
-                const anim = new eskv.WidgetAnimation();
-                anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250/2 );
-                anim.start(this);    
-            }
+            const anim = new eskv.WidgetAnimation();
+            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250 );
+            anim.start(this);
             this.actionsThisTurn--;
+            this.movementBlockedCount = Math.max(this.movementBlockedCount-1,0);
+        } else {
+            this.movementBlockedCount++;
         }
         if(this.activeCharacter) {
             this.updateLoS(mmap);
@@ -333,7 +334,7 @@ export class Character extends Entity {
                     moveCostGrid[i] = v===LayoutTiles.wall?Infinity:1;
                 });
                 for(let e of mmap.characters) {
-                    if(e!==this) moveCostGrid.set(e.gpos, moveCostGrid.get(e.gpos)+4);
+                    if(e!==this) moveCostGrid.set(e.gpos, moveCostGrid.get(e.gpos)+(e.movementBlockedCount<=this.movementBlockedCount?4+this.movementBlockedCount*2:4));
                 }
                 const route = costedBFSPath(moveCostGrid, src, dest);
                 if(route.length>0) {
@@ -341,7 +342,7 @@ export class Character extends Entity {
                     this.move(facingFromVec(route[0].sub(this.gpos)), mmap);
                     this.history.push(new Action());    
                 }
-                this.actionsThisTurn-=1; //Spend second action doing nothing
+                this.actionsThisTurn--; //Spend second action doing nothing
                 mmap.updateCharacterVisibility(true);
             }    
         }
