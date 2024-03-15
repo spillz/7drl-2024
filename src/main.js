@@ -277,6 +277,8 @@ class Game extends eskv.App {
         super();
         Game.resources['sprites'] = new eskv.sprites.SpriteSheet(spriteUrl, 16);
         this.continuousFrameUpdates = true;
+        window.focus();
+        this.canvas?.focus();
         if(props) this.updateProperties(props);
     }
     static get() {
