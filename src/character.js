@@ -289,6 +289,7 @@ export class Character extends Entity {
                 prevPos = eskv.v2(p0)
             }
         }
+        map.tileMap.clearCache();
     }
     /**
      * 

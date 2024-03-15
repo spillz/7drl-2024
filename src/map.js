@@ -249,11 +249,13 @@ function generateMansionMap(map, rng) {
     const [w,h] = [map.w, map.h];
     const tdim = new Vec2([map.w, map.h]);
     const tmap = map.tileMap;
+    tmap.useCache = true;
     tmap.numLayers = 3;
     tmap.tileDim = tdim;
     tmap.activeLayer = 0;
 
     const mmap = map.metaTileMap;
+    mmap.defaultValue = 0;
     mmap.numLayers = 8;
     mmap.tileDim = tdim;
     mmap.activeLayer = 0; //Ground/flooring/wall layout layer
@@ -339,6 +341,7 @@ function generateMansionMap(map, rng) {
     }
     tmap._vLayer = mmap._layerData[MetaLayers.seen];
     tmap._aLayer = mmap._layerData[MetaLayers.visible];
+    tmap.clearCache();
 }
 
 /**
