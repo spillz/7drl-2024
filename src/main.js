@@ -5,7 +5,7 @@ import {parse} from "../eskv/lib/modules/markup.js";
 import { MissionMap } from "./map.js";
 import { Character} from "./character.js";
 import { Facing } from "./facing.js";
-import { Action } from "./action.js";
+import { ActionItem } from "./action.js";
 
 //@ts-ignore
 import spriteUrl from '/images/spritesheet.png';
@@ -58,6 +58,7 @@ Game:
                 BoxLayout:
                     orientation: 'vertical'
                     hints: {w:'4'}
+                    id: 'firstPlayer'
                     Label:
                         text:\`Randy \${Randy.gpos}\`
                         hints: {h:'1'}
@@ -67,94 +68,21 @@ Game:
                         spriteSheet: resources['sprites']
                         frames: [354]
                         hints: {w:'3', h:'3'}
-                    Label:
-                        text:'1: Fire rifle'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [736]
-                        labelText: 'Fire rifle'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'2: Set C4'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [739]
-                        labelText: 'Set C4'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'3: Throw grenade'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [738]
-                        labelText: 'Throw Grenade'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'4: Use halligan'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [740]
-                        labelText: 'Use Halligan'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
+                    BoxLayout:
+                        hints: {h:null}
+                        id: 'firstPlayerInventory'
                     Widget:
                         id: 'padding2'
                 BoxLayout:
                     hints: {w:'4', h:null}
                     padding: '2'
                     orientation: 'vertical'
-                    Label:
-                        text:'5: Fire phaser'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [737]
-                        labelText: 'Fire phased'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'6: Place endoscope'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [743]
-                        labelText: 'Endoscope'
-                        spriteSheet: resources['sprites']
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'7: Use dusters'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [745]
-                        labelText: 'Use knuckle dusters'
-                        spriteSheet: resources['sprites']
-                        sizeGroup: 'actionItems'
-                        hints: {w:'3', h:'3'}
-                    Label:
-                        text:'8: Teleport'
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'left'
-                    Action:
-                        frames: [744]
-                        labelText: 'Teleport'
-                        spriteSheet: resources['sprites']
-                        sizeGroup: 'actionItems'
-                        hints: {w:'3', h:'3'}
+                    id: 'secondPlayer'
+                    Widget:
+                        id: 'padding2'
+                    BoxLayout:
+                        hints: {h:null}
+                        id: 'secondPlayerInventory'
                     Label:
                         text:\`Maria \${Maria.status}\`
                         wrap: true;
@@ -165,8 +93,6 @@ Game:
                         spriteSheet: resources['sprites']
                         frames: [450]
                         hints: {w:'3', h:'3'}
-                    Widget:
-                        id: 'padding2'
                 ScrollView:
                     id: 'scroller'
                     uiZoom: false
@@ -189,7 +115,9 @@ Game:
                 this.parent._needsLayout=true;
                 const helpHeader = window.app.findById('helpHeader');
                 helpHeader.text = [
-                    'Introduction',
+                    'Controls',
+                    'Instuctions',
+                    'Backstory',
                     'Agent Randy',
                     'Agent Maria',
                     'Director Stevens',
@@ -201,6 +129,8 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
+                    'Use W/A/S/D to move, space to pause, 1-4 to use items.',
+                    'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
                     '\\n\\nGiven the severity of the situation, the Unified Space Government has given two of their top agents a secret, limited, and local version of the time loop tech to provide an edge on missions so that they can stop the syndicate before it’s too late.',
@@ -215,7 +145,7 @@ Game:
                 ][this.helpVal];
                 const helpSprite = window.app.findById('helpSprite');
                 helpSprite.frames = [
-                    [0], [355], [451], [0], [832], [833],[0],[834],[835]
+                    [0], [0], [0], [355], [451], [0], [832], [833],[0],[834],[835]
                 ][this.helpVal];
             Label:
                 id: 'helpHeader'
@@ -264,6 +194,7 @@ class FPS extends eskv.Label {
         const currentFPS = 1000/(tref-this._tref);
         this._tref= tref;
         this._badFrameCount += currentFPS<50?1:0;
+        console.log('update FPS', millis, this._counter);
         if(currentFPS<this._worst) this._worst = currentFPS;
         if(this._counter>=1000) {
             this.text = `FPS: ${Math.round(this._frames/this._counter*1000)} (worst: ${Math.round(this._worst)}, # >20ms: ${Math.round(this._badFrameCount)})`;
@@ -319,7 +250,7 @@ class Game extends eskv.App {
     }
 }
 
-Game.registerClass('Action', Action, 'Label');
+Game.registerClass('Action', ActionItem, 'Label');
 Game.registerClass('FPS', FPS, 'Label');
 Game.registerClass('Game', Game, 'App');
 Game.registerClass('MissionMap', MissionMap, 'Widget');

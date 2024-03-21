@@ -362,7 +362,7 @@ function drawFloorUnderWall(ctx, spriteSheet, mmap, tmap) {
                 const pmtile = mmap.get(ppos);
                 if(pmtile<LayoutTiles.wall) {
                     const drawTile = tmap.get(ppos);
-                    spriteSheet.drawIndexedClipped(ctx, drawTile, ppos[0], ppos[1], (1+adj[0])/2, (1+adj[1])/2, 0.5*Math.abs(adj[0]), 0.5*Math.abs(adj[1]));
+                    // spriteSheet.drawIndexedClipped(ctx, drawTile, ppos[0], ppos[1], (1+adj[0])/2, (1+adj[1])/2, 0.5*Math.abs(adj[0]), 0.5*Math.abs(adj[1]));
                 }
             }
         }
@@ -480,4 +480,33 @@ export class MissionMap extends eskv.Widget {
             e.visibleToPlayer = e.visibleToPlayer || this.activeCharacter?._visibleLayer.get(e.gpos)===1;
         }
     }
+    /**
+     * 
+     * @param {string} message 
+     * @param {'enemy'|'position'|'posAdjacent'} targetType 
+     * @param {(map:MissionMap, target:Vec2)=>void} callback 
+     */
+    targetSelector(message, targetType, callback) {
+
+    }
+    /**
+     * 
+     * @param {string} message 
+     * @param {'success'|'failure'|'info'} messageType 
+     */
+    prompt(message, messageType) {
+
+    }
+    /**
+     * 
+     * @param {Vec2} position 
+     */
+    getCharacterAt(position) {
+        for(let c of this.characters) {
+            if(c.gpos.equals(position)) return c;
+        }
+        return null;
+    }
+
+
 }

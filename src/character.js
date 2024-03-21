@@ -2,7 +2,7 @@
 
 import * as eskv from "../eskv/lib/eskv.js";
 import {vec2, Vec2, Grid2D} from "../eskv/lib/eskv.js";
-import { Action, ActionData } from "./action.js";
+import { ActionItem, ActionData } from "./action.js";
 import { Entity } from "./entity.js";
 import { MissionMap, MetaLayers, LayoutTiles } from "./map.js";
 import { Facing, FacingVec, binaryFacing, facingFromVec } from "./facing.js"
@@ -117,15 +117,20 @@ function costedBFSPath(costGrid, origin, dest) {
 }
 
 
-/**@typedef {'Patrolling'|'Sleeping'|'Hunting'|'Hiding'|'Fleeing'} CharacterStates */
+/**@typedef {'patrolling'|'sleeping'|'hunting'|'hiding'|'fleeing'|'dead'|'unconscious'|'shocked'} CharacterStates */
 
 export class Character extends Entity {
-    /**@type {Set<Action>} */
+    /**@type {Set<ActionItem>} */
     actions = new Set();
     /**@type {Facing} */
     facing = Facing.north;
+    constitution = 1;
     /**@type {CharacterStates} */
-    state = 'Patrolling';
+    priorState = 'patrolling';
+    /**@type {CharacterStates} */
+    state = 'patrolling';
+    /**@type {CharacterStates} */
+    resumeState = 'patrolling';
     /**Grid location of the character on the map */
     gpos = vec2(0,0);
     /**@type {eskv.Vec2[]} Array of waypoints that character will move along in patrol mode*/
@@ -136,7 +141,7 @@ export class Character extends Entity {
     actionsThisTurn = 2;
     /** true if player can see this character */
     visibleToPlayer = false;
-    /** @type {Action[]} */
+    /** @type {ActionItem[]} */
     history = [];
     suppressed = false;
     /**Cumulative # of actions where the character's movement has been impeded */
@@ -148,10 +153,27 @@ export class Character extends Entity {
     constructor(props={}) {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
-        this.frames = [484];
+        this.frames = [452]; //484
         this.w = 1;
         this.h = 1;
         if(props) this.updateProperties(props);
+    }
+    /**
+     * Line of sight check from one character to another
+     * respects both tile sight and cover properties
+     * @param {Character} character 
+     * @param {MissionMap} map 
+     */
+    canSee(character, map) {
+        const sightMap = map.metaTileMap.layer[MetaLayers.allowsSight]
+        const coverMap = map.metaTileMap.layer[MetaLayers.cover]
+        const w = sightMap.tileDim[0];
+        let cover = false;
+        for(let pos of sightMap.iterInBetween(this.gpos, character.gpos)) {
+            if(sightMap[pos[0]+pos[1]*w]===0 || cover) return false;
+            cover = coverMap[pos[0]+pos[1]*w]>0?true:false;
+        }
+        return true;
     }
     /**
      * 
@@ -193,7 +215,7 @@ export class Character extends Entity {
     rest(mmap) {
         this.actionsThisTurn--;
         if(this.activeCharacter) {
-            this.updateLoS(mmap);
+            this.updateFoV(mmap);
             this.updateCamera(mmap);
         }
     }
@@ -209,6 +231,7 @@ export class Character extends Entity {
         this.facing = dir;
         //TODO: Make characters swap if they are stuck in a faceoff
         if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos), false)) {
+            this.pos = eskv.v2(this.gpos); //Cut the old animation and move to where the character was
             this.gpos = npos;
             const anim = new eskv.WidgetAnimation();
             anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250 );
@@ -219,9 +242,15 @@ export class Character extends Entity {
             this.movementBlockedCount++;
         }
         if(this.activeCharacter) {
-            this.updateLoS(mmap);
+            this.updateFoV(mmap);
             this.updateCamera(mmap);
         }
+    }
+    /**
+     * @param {'piercing'|'shock'|'force'} damageType
+     */
+    takeDamage(damageType) {
+        if(damageType==='piercing') this.state = 'dead';
     }
     /**
      * 
@@ -232,10 +261,13 @@ export class Character extends Entity {
     useAction(actionId, position, mode) {
     }
     /**
-     * 
+     * Updates the field of view for the character
+     * This is expensive so typically we will only run this
+     * on the active player character. Non-player character
+     * checks should use canSee instead on discrete points
      * @param {MissionMap} map 
      */
-    updateLoS(map) {
+    updateFoV(map) {
         const mmap = map.metaTileMap
         this._coverPositions.clear();
         this._visibleLayer.fill(0);
@@ -310,7 +342,7 @@ export class Character extends Entity {
     }
     /**
      * 
-     * @param {Action} action 
+     * @param {ActionItem} action 
      * @param {MissionMap} mmap 
      */
     takeAction(action, mmap) {
@@ -324,7 +356,7 @@ export class Character extends Entity {
     takeTurn(mmap) {
         mmap.updateCharacterVisibility(true);
         while(this.actionsThisTurn>0) {
-            if(this.state==='Patrolling') {
+            if(this.state==='patrolling') {
                 if(this.patrolTarget<0) this.patrolTarget=0;
                 if(this.patrolRoute.length===0) return;
                 if(this.gpos.equals(this.patrolRoute[this.patrolTarget])) this.patrolTarget = (this.patrolTarget+1)%this.patrolRoute.length;
@@ -341,7 +373,7 @@ export class Character extends Entity {
                 if(route.length>0) {
                     //First action spent moving
                     this.move(facingFromVec(route[0].sub(this.gpos)), mmap);
-                    this.history.push(new Action());    
+                    this.history.push(new ActionItem());    
                 }
                 this.actionsThisTurn--; //Spend second action doing nothing
                 mmap.updateCharacterVisibility(true);
@@ -362,7 +394,7 @@ export class PlayerCharacter extends Character {
     constructor(props={}) {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
-        this.frames = [292];
+        this.frames = [259]; //292
         if(props) this.updateProperties(props);
     }
     /**
@@ -379,8 +411,20 @@ export class PlayerCharacter extends Character {
         }
     }
     /**
+     * Line of sight check from one character to another
+     * Uses the player's field of view, which respects both 
+     * tile sight and cover properties
+     * @param {Character} character 
+     * @param {MissionMap} map 
+     */
+     canSee(character, map) {
+        const vmap = this._visibleLayer;
+        const [x,y] = character.gpos;
+        return vmap[x+y*vmap.tileDim[0]]>0?true:false;
+    }
+    /**
      * 
-     * @param {Action} action 
+     * @param {ActionItem} action 
      * @param {MissionMap} mmap 
      */
     takeAction(action, mmap) {
