@@ -1,7 +1,10 @@
 Game related
 ============
 
- - Get actions working
+ - Map rendering
+    - Put visibility on it's own layer instead of using visibility to darken and only
+      partially re-render to speed up the render caching
+ - Get actions working [PARTIAL WORK 3/25/24]
     - Basic setup with good separation of concerns (See actions below)
     - Rifle (accurate, wide range, suppression)
     - Pistol

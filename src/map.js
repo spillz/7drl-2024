@@ -2,7 +2,8 @@
 
 import * as eskv from "../eskv/lib/eskv.js";
 import {Rect, Vec2} from "../eskv/lib/eskv.js";
-import { LayeredTileMap, SpriteSheet, TileMap } from "../eskv/lib/modules/sprites.js";
+import { LayeredTileMap, SpriteSheet, SpriteWidget, TileMap } from "../eskv/lib/modules/sprites.js";
+import { Rifle } from "./action.js";
 import { Character, PlayerCharacter } from "./character.js";
 
 export const MetaLayers = {
@@ -415,6 +416,86 @@ export class GameWindow extends eskv.Widget {
 
 }
 
+export class PositionSelector extends eskv.Widget {
+    /**@type {Vec2[]} */
+    _validCells = [];
+    /**@type {Character[]} */
+    _validCharacters = [];
+    /**@type {number} */
+    activeCell = -1;
+    constructor(props={}) {
+        super();
+        if(props) this.updateProperties(props);        
+    }
+    set validCharacters(value) {
+        this._validCharacters = value;
+        this._validCells = this.validCharacters.map((v)=>v.gpos);
+        this.setupValidCells();
+    }
+    get validCharacters() {
+        return this._validCharacters;
+    }
+    set validCells(value) {
+        this._validCharacters = [];
+        this._validCells = value;
+        this.setupValidCells();
+    }
+    get validCells() {
+        return this._validCells;
+    }
+    setupValidCells() {
+        const children = [];
+        let i = 0;
+        for(let pos of this._validCells) {
+            children.push(new SpriteWidget({
+                spriteSheet: eskv.App.resources['sprites'],
+                x: pos[0],
+                y: pos[1],
+                w: 1,
+                h: 1,
+                frames: [this.activeCell===i?6:5],
+            }));
+            i++;
+        }
+        this.children = children;
+        this.activeCell = this._validCells.length>0? 0: -1;
+    }
+    on_activeCell(e, o, v) {
+        let i = 0;
+        for(let w of this.children) {
+            if(w instanceof SpriteWidget) w.frames = [this.activeCell===i?6:5];
+            i++;
+        }
+    }
+    /**
+     * 
+     * @param {Vec2} direction 
+     */
+    moveActiveCell(direction) {
+        const deltas = [];
+        const activePos = this.validCells[this.activeCell];
+        let maxDist = 0;
+        let minDist = +Infinity;
+        let minDistInd = -1;
+        let maxDistInd = this.activeCell;
+        let i = 0;
+        for(let pos of this.validCells) {
+            const delta = pos.sub(activePos);
+            const dist = delta.mul(direction).sum() + eskv.vec2(1,1).sub(direction.abs()).mul(delta).sum();
+            if(dist>0 && dist<minDist) {
+                minDist = dist;
+                minDistInd = i;
+            }
+            if(dist<0 && dist<maxDist) {
+                maxDist = dist;
+                maxDistInd = i;
+            }
+            i++;
+        }
+        this.activeCell = minDistInd>=0? minDistInd : maxDistInd;
+    }
+}
+
 export class MissionMap extends eskv.Widget {
     rng = new eskv.rand.PRNG_sfc32(); //.setPRNG('sfc32');
     clipRegion = new Rect();
@@ -440,7 +521,8 @@ export class MissionMap extends eskv.Widget {
     spriteSheet = null;
     constructor(props=null) {
         super();
-        this.children = [this.tileMap, this.entities, ...this.enemies, ...this.playerCharacters];
+        this.positionSelector = new PositionSelector()
+        this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters];
         this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
@@ -448,6 +530,7 @@ export class MissionMap extends eskv.Widget {
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this, this.rng);
         this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
+        this.playerCharacters[0].actions.add(new Rifle());
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;

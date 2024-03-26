@@ -2,7 +2,7 @@
 
 import * as eskv from "../eskv/lib/eskv.js";
 import {vec2, Vec2, Grid2D} from "../eskv/lib/eskv.js";
-import { ActionItem, ActionData } from "./action.js";
+import { ActionItem } from "./action.js";
 import { Entity } from "./entity.js";
 import { MissionMap, MetaLayers, LayoutTiles } from "./map.js";
 import { Facing, FacingVec, binaryFacing, facingFromVec } from "./facing.js"
@@ -141,7 +141,7 @@ export class Character extends Entity {
     actionsThisTurn = 2;
     /** true if player can see this character */
     visibleToPlayer = false;
-    /** @type {ActionItem[]} */
+    /** @type {[ActionItem, import("./action.js").ActionResponseData][]} */
     history = [];
     suppressed = false;
     /**Cumulative # of actions where the character's movement has been impeded */
@@ -342,11 +342,21 @@ export class Character extends Entity {
     }
     /**
      * 
-     * @param {ActionItem} action 
+     * @param {ActionItem} actionItem
      * @param {MissionMap} mmap 
+     * @param {import("./action.js").ActionResponseData} request
+     * @returns {import("./action.js").ActionResponseData}
      */
-    takeAction(action, mmap) {
-        this.history.push(action);
+    takeAction(actionItem, mmap, request={}) {
+        if(this.actions.has(actionItem)) {
+            const response = actionItem.request(this, mmap, request);
+            if(response.result==='complete') {
+                this.history.push([actionItem, request]);
+                this.actionsThisTurn--;
+            }
+            return response;
+        }
+        return {result:'notAvailable'};
     }
     /**
      * 
@@ -358,7 +368,7 @@ export class Character extends Entity {
         while(this.actionsThisTurn>0) {
             if(this.state==='patrolling') {
                 if(this.patrolTarget<0) this.patrolTarget=0;
-                if(this.patrolRoute.length===0) return;
+                if(this.patrolRoute.length===0) break;
                 if(this.gpos.equals(this.patrolRoute[this.patrolTarget])) this.patrolTarget = (this.patrolTarget+1)%this.patrolRoute.length;
                 const src = this.gpos; 
                 const dest = this.patrolRoute[this.patrolTarget];
@@ -373,11 +383,13 @@ export class Character extends Entity {
                 if(route.length>0) {
                     //First action spent moving
                     this.move(facingFromVec(route[0].sub(this.gpos)), mmap);
-                    this.history.push(new ActionItem());    
+                    this.history.push([new ActionItem(),{}]);    
                 }
                 this.actionsThisTurn--; //Spend second action doing nothing
                 mmap.updateCharacterVisibility(true);
-            }    
+            } else if (this.state==='dead') {
+                this.actionsThisTurn--;
+            }
         }
         this.actionsThisTurn = 2;
     }
@@ -420,13 +432,15 @@ export class PlayerCharacter extends Character {
      canSee(character, map) {
         const vmap = this._visibleLayer;
         const [x,y] = character.gpos;
-        return vmap[x+y*vmap.tileDim[0]]>0?true:false;
+        return vmap[x+y*vmap.tileDim[0]]>0;
     }
     /**
      * 
-     * @param {ActionItem} action 
-     * @param {MissionMap} mmap 
+     * @param {string} key 
      */
-    takeAction(action, mmap) {
+    getActionForKey(key) {
+        return [...this.actions].find((a)=>{
+            return a.keyControl===key
+        })
     }
 }

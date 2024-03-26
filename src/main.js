@@ -3,8 +3,8 @@
 import * as eskv from "../eskv/lib/eskv.js";
 import {parse} from "../eskv/lib/modules/markup.js";
 import { MissionMap } from "./map.js";
-import { Character} from "./character.js";
-import { Facing } from "./facing.js";
+import { Character, PlayerCharacter} from "./character.js";
+import { Facing, FacingVec } from "./facing.js";
 import { ActionItem } from "./action.js";
 
 //@ts-ignore
@@ -31,9 +31,9 @@ Game:
                 FPS:
                     align:'left'
                 Label:
-                    id: 'zoomButton'
+                    id: 'messageLabel'
                     text: 'Welcome to the mansion'
-                    align: 'right'
+                    align: 'left'
                 Button: 
                     text: 'Help'
                     hints: {w: '3'}
@@ -194,7 +194,6 @@ class FPS extends eskv.Label {
         const currentFPS = 1000/(tref-this._tref);
         this._tref= tref;
         this._badFrameCount += currentFPS<50?1:0;
-        console.log('update FPS', millis, this._counter);
         if(currentFPS<this._worst) this._worst = currentFPS;
         if(this._counter>=1000) {
             this.text = `FPS: ${Math.round(this._frames/this._counter*1000)} (worst: ${Math.round(this._worst)}, # >20ms: ${Math.round(this._badFrameCount)})`;
@@ -207,6 +206,10 @@ class FPS extends eskv.Label {
 }
 
 class Game extends eskv.App {
+    /**@type {ActionItem|null} */
+    activePlayerAction = null;
+    /**@type {import("./action.js").ActionResponseData|null} */
+    activePlayerActionData = null;
     constructor(props={}) {
         super();
         Game.resources['sprites'] = new eskv.sprites.SpriteSheet(spriteUrl, 16);
@@ -221,23 +224,67 @@ class Game extends eskv.App {
     on_key_down(e, o, v) {
         const ip = this.inputHandler;
         if(ip===undefined) return;
-        const mmap = /**@type {MissionMap|null}*/(this.findById('MissionMap'))
-        if(mmap===null) return;
-        const char = /**@type {Character|null}*/(this.findById('Randy'));
-
-        if(char===null) return;
-        if(ip.isKeyDown('w')) {
-            char.move(Facing.north, mmap);
-        } else if(ip.isKeyDown('a')) {
-            char.move(Facing.west, mmap);
-        } else if(ip.isKeyDown('s')) {
-            char.move(Facing.south, mmap);
-        } else if(ip.isKeyDown('d')) {
-            char.move(Facing.east, mmap);
-        } else if(ip.isKeyDown(' ')) {
-            char.rest(mmap);
+        const mmap = /**@type {MissionMap}*/(this.findById('MissionMap'))
+        const char = /**@type {PlayerCharacter}*/(this.findById('Randy'));
+        const messageLabel = /**@type {eskv.Label}*/(this.findById('messageLabel'));
+        if(!this.activePlayerAction) {
+            const action = char.getActionForKey(v.event.key)
+            if(action) {
+                const response = char.takeAction(action, mmap);
+                if(response.result==='complete' || response.result==='notAvailable' || response.result==='invalid') {
+                    this.activePlayerAction = null;
+                    this.activePlayerActionData = null;
+                    messageLabel.text = response.message??'unknown action response';
+                } else if(response.result==='infoNeeded') {
+                    this.activePlayerAction = action;
+                    this.activePlayerActionData = response;
+                    const ps = mmap.positionSelector;
+                    messageLabel.text = response.message??'unknown action response';
+                    if(response.validTargetCharacters) ps.validCharacters = response.validTargetCharacters;
+                    if(response.validTargetPositions) ps.validCells = response.validTargetPositions;
+                }
+            } else if(ip.isKeyDown('w')) {
+                char.move(Facing.north, mmap);
+            } else if(ip.isKeyDown('a')) {
+                char.move(Facing.west, mmap);
+            } else if(ip.isKeyDown('s')) {
+                char.move(Facing.south, mmap);
+            } else if(ip.isKeyDown('d')) {
+                char.move(Facing.east, mmap);
+            } else if(ip.isKeyDown(' ')) {
+                char.rest(mmap);
+            } else {
+                return;
+            }    
         } else {
-            return;
+            const action = this.activePlayerAction
+            const actionData = this.activePlayerActionData;
+            const ps = mmap.positionSelector;
+            if(actionData?.validTargetCharacters) {
+                if(ip.isKeyDown('w')) {
+                    ps.moveActiveCell(FacingVec[Facing.north]);
+                } else if(ip.isKeyDown('a')) {
+                    ps.moveActiveCell(FacingVec[Facing.west]);
+                } else if(ip.isKeyDown('s')) {
+                    ps.moveActiveCell(FacingVec[Facing.south]);
+                } else if(ip.isKeyDown('d')) {
+                    ps.moveActiveCell(FacingVec[Facing.east]);
+                } else if(ip.isKeyDown('e')) {
+                    actionData.targetCharacter = ps.validCharacters[ps.activeCell];
+                    const response = char.takeAction(action, mmap, actionData);
+                    if(response.result==='complete') {
+                        ps.validCells = [];
+                        messageLabel.text = response.message??'unknown action response';
+                        this.activePlayerAction = null;
+                        this.activePlayerActionData = null;
+                    }
+                } else if(ip.isKeyDown('escape')) {
+                    ps.validCells = [];
+                    messageLabel.text = 'canceled';
+                    this.activePlayerAction = null;
+                    this.activePlayerActionData = null;
+                }
+            }
         }
         mmap.updateCharacterVisibility();
         if(char.actionsThisTurn===0) {
