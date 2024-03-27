@@ -6,11 +6,42 @@ import { ActionItem } from "./action.js";
 import { Entity } from "./entity.js";
 import { MissionMap, MetaLayers, LayoutTiles } from "./map.js";
 import { Facing, FacingVec, binaryFacing, facingFromVec } from "./facing.js"
-import { TileMap } from "../eskv/lib/modules/sprites.js";
+import { TileMap, laf, LayeredAnimationFrame } from "../eskv/lib/modules/sprites.js";
 
-const animations = {
-    standing: []
+/**@typedef {'patrolling'|'sleeping'|'hunting'|'hiding'|'surrendering'|'fleeing'|'dead'|'unconscious'|'shocked'} CharacterStates */
+/**@typedef {'standing'|'walking'|'dead'} AnimationStates */
+
+
+const characterAnimations = {
+    whiteShirt: {
+        standing: [
+            laf([518, 484],  [[0,0], [0, -0.25]]),
+        ],
+        walking: [
+            laf([515, 483],   [[0,0], [0, -0.25]]),
+            laf([516, 484],   [[0,0], [0, -0.25]]),
+            laf([4612, 484],  [[0,0], [0, -0.25]]),
+            laf([4611, 4579], [[0,0], [0, -0.25]]),
+            laf([4612, 484],  [[0,0], [0, -0.25]]),
+            laf([516, 484],   [[0,0], [0, -0.25]]),
+        ],
+        dead: [
+            laf([481, 513], [[0,1], [0, 0]])
+        ],
+    },
+    greenShirt: {
+
+    },
+    randy: {
+
+    },
+    maria: {
+
+    }
+
 }
+
+
 
 /**
  * Returns a BFS-style distance field on a grid-based TileMap
@@ -117,8 +148,6 @@ function costedBFSPath(costGrid, origin, dest) {
 }
 
 
-/**@typedef {'patrolling'|'sleeping'|'hunting'|'hiding'|'fleeing'|'dead'|'unconscious'|'shocked'} CharacterStates */
-
 export class Character extends Entity {
     /**@type {Set<ActionItem>} */
     actions = new Set();
@@ -131,6 +160,10 @@ export class Character extends Entity {
     state = 'patrolling';
     /**@type {CharacterStates} */
     resumeState = 'patrolling';
+    /**@type {AnimationStates} */
+    animationState = 'standing';
+    /**@type {{[id:string]: LayeredAnimationFrame[]|number[]}|null} */
+    animationGroup = null;
     /**Grid location of the character on the map */
     gpos = vec2(0,0);
     /**@type {eskv.Vec2[]} Array of waypoints that character will move along in patrol mode*/
@@ -153,6 +186,7 @@ export class Character extends Entity {
     constructor(props={}) {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
+        /**@type {number[]|LayeredAnimationFrame[]} */
         this.frames = [452]; //484
         this.w = 1;
         this.h = 1;
@@ -200,14 +234,9 @@ export class Character extends Entity {
         this.patrolRoute = [a, b];
         this.gpos = eskv.v2(b);
         [this.x, this.y] = this.gpos;
-        const lookup = {
-            'Alfred': [832,2880],
-            'Bennie': [832+1,2880+1],
-            'Charlie': [832+2,2880+2],
-            'Devon': [832+3,2880+3],
-        }
-        map.tileMap.layer[1].set(a,lookup[this.id][0]);
-        map.tileMap.layer[1].set(b,lookup[this.id][1]);
+        this.animationState = 'standing';
+        this.animationGroup = characterAnimations.whiteShirt;
+        this.frames = this.animationGroup[this.animationState];
     }
     /**
      * @param {MissionMap} mmap
@@ -234,8 +263,14 @@ export class Character extends Entity {
             this.pos = eskv.v2(this.gpos); //Cut the old animation and move to where the character was
             this.gpos = npos;
             const anim = new eskv.WidgetAnimation();
-            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 250 );
+            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 500 );
             anim.start(this);
+            if(this.animationGroup!==null) {
+                this.animationState = 'walking';
+                this.frames = this.animationGroup[this.animationState];
+                this.activeFrame = 0;
+                this.timePerFrame = 100;
+            }
             this.actionsThisTurn--;
             this.movementBlockedCount = Math.max(this.movementBlockedCount-1,0);
         } else {
@@ -244,6 +279,14 @@ export class Character extends Entity {
         if(this.activeCharacter) {
             this.updateFoV(mmap);
             this.updateCamera(mmap);
+        }
+    }
+    on_animationComplete(e, o, v) {
+        if(this.animationState = 'walking') {
+            this.animationState = 'standing';
+            if(this.animationGroup) {
+                this.frames = this.animationGroup[this.animationState];
+            }
         }
     }
     /**
@@ -333,11 +376,16 @@ export class Character extends Entity {
             const target = this.gpos.add(FacingVec[this.facing].scale(5));
             const dist = target.dist(this.gpos);
             //TODO: Put the camera a few spaces behind the player in the current facing
-            const X = Math.min(Math.max(target[0]+0.5-camera.w/camera.zoom/2, 0), mmap.w);
-            const Y = Math.min(Math.max(target[1]+0.5-camera.h/camera.zoom/2, 0), mmap.h);
+            let X = Math.min(Math.max(target[0]+0.5-camera.w/camera.zoom/2, 0), mmap.w);
+            let Y = Math.min(Math.max(target[1]+0.5-camera.h/camera.zoom/2, 0), mmap.h);
+            const ts = eskv.App.get().tileSize;
+            X = Math.floor(X*ts)/ts
+            Y = Math.floor(Y*ts)/ts
             const anim = new eskv.WidgetAnimation();
             anim.add({ scrollX: X, scrollY: Y}, 250*dist/2 );
-            anim.start(camera);
+            anim.start(camera);    
+        // if(eskv.v2([camera.scrollX, camera.scrollY]).dist([X,Y])>0.5) {
+        //     }
         }
     }
     /**
