@@ -36,7 +36,7 @@ export class ActionItem extends eskv.BoxLayout {
     constructor(props={}) {
         super();
         this.hints = {h:'5'};
-        this.sprite = new SpriteWidget({hints:{h:'4'}});
+        this.sprite = new SpriteWidget({spriteSheet:eskv.App.resources['sprites']});
         this.label = new eskv.Label({hints:{h:'1'}});
         this.children = [
             this.sprite,
