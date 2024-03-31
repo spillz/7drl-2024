@@ -13,31 +13,70 @@ import { TileMap, laf, LayeredAnimationFrame } from "../eskv/lib/modules/sprites
 
 
 const characterAnimations = {
+    randy: {
+        standing: [
+            laf([326, 4388],  [[0,0], [0, -0.25]]),
+        ],
+        walking: [
+            laf([323, 4387],   [[0,0], [0, -0.25]]),
+            laf([324, 4387],   [[0,0], [0, -0.25]]),
+            laf([4420,4388],  [[0,0], [0, -0.25]]),
+            laf([4419,4389], [[0,0], [0, -0.25]]),
+            laf([4420,4389], [[0,0], [0, -0.25]]),
+            laf([324, 4388],   [[0,0], [0, -0.25]]),
+        ],
+        dead: [
+            laf([321, 289/*, 321+32*/], [[0,1], [0, 0]])
+        ],
+    },
+    maria: {
+        standing: [
+            laf([326+96, 4388+96],  [[0,0], [0, -0.25]]),
+        ],
+        walking: [
+            laf([323+96,  4387+96],   [[0,0], [0, -0.25]]),
+            laf([324+96,  4387+96],   [[0,0], [0, -0.25]]),
+            laf([4420+96, 4388+96],  [[0,0], [0, -0.25]]),
+            laf([4419+96, 4389+96], [[0,0], [0, -0.25]]),
+            laf([4420+96, 4389+96],  [[0,0], [0, -0.25]]),
+            laf([324+96,  4388+96],   [[0,0], [0, -0.25]]),
+        ],
+        dead: [
+            laf([321+96, 289+96 /*, 321+96+32*/], [[0,1], [0, 0]])
+        ],
+    },
+    greenShirt: {
+        standing: [
+            laf([326+288, 4388+288],  [[0,0], [0, -0.25]]),
+        ],
+        walking: [
+            laf([323+288,  4387+288],   [[0,0], [0, -0.25]]),
+            laf([324+288,  4387+288],   [[0,0], [0, -0.25]]),
+            laf([4420+288, 4388+288],  [[0,0], [0, -0.25]]),
+            laf([4419+288, 4389+288], [[0,0], [0, -0.25]]),
+            laf([4420+288, 4389+288],  [[0,0], [0, -0.25]]),
+            laf([324+288,  4388+288],   [[0,0], [0, -0.25]]),
+        ],
+        dead: [
+            laf([321+288, 289+288, 321+288+32], [[0,1], [0, 0]])
+        ],
+    },
     whiteShirt: {
         standing: [
             laf([518, 484],  [[0,0], [0, -0.25]]),
         ],
         walking: [
             laf([515, 483],   [[0,0], [0, -0.25]]),
-            laf([516, 484],   [[0,0], [0, -0.25]]),
+            laf([516, 483],   [[0,0], [0, -0.25]]),
             laf([4612, 484],  [[0,0], [0, -0.25]]),
             laf([4611, 4579], [[0,0], [0, -0.25]]),
-            laf([4612, 484],  [[0,0], [0, -0.25]]),
+            laf([4612, 4579],  [[0,0], [0, -0.25]]),
             laf([516, 484],   [[0,0], [0, -0.25]]),
         ],
         dead: [
-            laf([481, 513], [[0,1], [0, 0]])
+            laf([513, 481, 513+32], [[0,1], [0, 0]])
         ],
     },
-    greenShirt: {
-
-    },
-    randy: {
-
-    },
-    maria: {
-
-    }
 
 }
 
@@ -151,6 +190,8 @@ function costedBFSPath(costGrid, origin, dest) {
 export class Character extends Entity {
     /**@type {Set<ActionItem>} */
     actions = new Set();
+    /**@type {eskv.Widget|null}*/
+    actionInventory = null;
     /**@type {Facing} */
     facing = Facing.north;
     constitution = 1;
@@ -191,6 +232,40 @@ export class Character extends Entity {
         this.w = 1;
         this.h = 1;
         if(props) this.updateProperties(props);
+    }
+    on_actionInventory(e, o, v) {
+        if(this.actionInventory) {
+            const children = [];
+            for(let a of this.actions) {
+                a.hints = {w:'3', h:'3'};
+                this.actionInventory.addChild(a);
+            }
+            this.actionInventory.children = children;
+        }
+    }
+    /**
+     * 
+     * @param {ActionItem} action 
+     */
+    addAction(action) {
+        if(this.actions.has(action)) return false;
+        this.actions.add(action);
+        action.hints = {w:'3', h:'3'};
+        if(this.actionInventory) this.actionInventory.addChild(action);
+        return true;
+    }
+    /**
+     * 
+     * @param {ActionItem} action 
+     */
+    removeAction(action) {
+        if(!this.actions.has(action)) return false;
+        this.actions.delete(action);
+        if(this.actionInventory) this.actionInventory.removeChild(action);
+        return true;
+    }
+    on_animationState(e,o,v) {
+        if(this.animationGroup) this.frames = this.animationGroup[this.animationState];
     }
     /**
      * Line of sight check from one character to another
@@ -234,9 +309,8 @@ export class Character extends Entity {
         this.patrolRoute = [a, b];
         this.gpos = eskv.v2(b);
         [this.x, this.y] = this.gpos;
+        this.animationGroup = this.id[0]==='d'?characterAnimations.greenShirt:characterAnimations.whiteShirt;
         this.animationState = 'standing';
-        this.animationGroup = characterAnimations.whiteShirt;
-        this.frames = this.animationGroup[this.animationState];
     }
     /**
      * @param {MissionMap} mmap
@@ -259,17 +333,15 @@ export class Character extends Entity {
         const traverse = tmap.getFromLayer(MetaLayers.traversible, npos)
         this.facing = dir;
         //TODO: Make characters swap if they are stuck in a faceoff
-        if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos), false)) {
+        if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos)&&e.state!=='dead', false)) {
             this.pos = eskv.v2(this.gpos); //Cut the old animation and move to where the character was
             this.gpos = npos;
             const anim = new eskv.WidgetAnimation();
-            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 500 );
+            anim.add({ x: this.gpos[0], y: this.gpos[1]}, 300);
             anim.start(this);
             if(this.animationGroup!==null) {
                 this.animationState = 'walking';
-                this.frames = this.animationGroup[this.animationState];
-                this.activeFrame = 0;
-                this.timePerFrame = 100;
+                this.timePerFrame = 60; //TODO: put this in the layered frame definiton??
             }
             this.actionsThisTurn--;
             this.movementBlockedCount = Math.max(this.movementBlockedCount-1,0);
@@ -284,16 +356,16 @@ export class Character extends Entity {
     on_animationComplete(e, o, v) {
         if(this.animationState = 'walking') {
             this.animationState = 'standing';
-            if(this.animationGroup) {
-                this.frames = this.animationGroup[this.animationState];
-            }
         }
     }
     /**
      * @param {'piercing'|'shock'|'force'} damageType
      */
     takeDamage(damageType) {
-        if(damageType==='piercing') this.state = 'dead';
+        if(damageType==='piercing') {
+            this.state = 'dead';
+            this.animationState = 'dead';
+        }
     }
     /**
      * 
@@ -463,6 +535,8 @@ export class PlayerCharacter extends Character {
      */
     setupForLevelStart(map) {
         this._coverPositions = new Set(); // set of positions that have cover from the current location
+        this.animationGroup = characterAnimations[this.id];
+        this.animationState = 'standing';
         if(this.activeCharacter) {
             this._visibleLayer = map.metaTileMap._layerData[MetaLayers.visible];
             this._visibleLayer.fill(0);
