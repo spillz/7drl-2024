@@ -2,7 +2,7 @@
 
 import * as eskv from "../eskv/lib/eskv.js";
 import {parse} from "../eskv/lib/modules/markup.js";
-import { MissionMap } from "./map.js";
+import { MetaLayers, MissionMap } from "./map.js";
 import { Character, PlayerCharacter} from "./character.js";
 import { Facing, FacingVec } from "./facing.js";
 import { ActionItem } from "./action.js";
@@ -43,7 +43,7 @@ Game:
                         const nb = window.app.findById('notebook');
                         nb.activePage = 1;
                 Button: 
-                    text: '100%'
+                    text:  \`\${scroller.zoom*100}%\`
                     hints: {w: '3'}
                     id: 'zoomButton'
                     on_press:
@@ -51,7 +51,6 @@ Game:
                         if(!scroller) return;
                         const zoom = Math.floor(scroller.zoom + 1);
                         scroller.zoom = zoom<4? zoom:0.5;
-                        this.text = String(scroller.zoom*100)+'%';
             BoxLayout:
                 bgColor: 'rgb(35,35,45)'
                 orientation: 'horizontal'
@@ -60,7 +59,7 @@ Game:
                     hints: {w:'4'}
                     id: 'firstPlayer'
                     Label:
-                        text:\`Randy \${Randy.gpos}\`
+                        text:\`Randy \${randy.gpos}\`
                         hints: {h:'1'}
                         sizeGroup: 'actionItems'
                         align: 'left'
@@ -225,7 +224,7 @@ class Game extends eskv.App {
         const ip = this.inputHandler;
         if(ip===undefined) return;
         const mmap = /**@type {MissionMap}*/(this.findById('MissionMap'))
-        const char = /**@type {PlayerCharacter}*/(this.findById('Randy'));
+        const char = /**@type {PlayerCharacter}*/(this.findById('randy'));
         const messageLabel = /**@type {eskv.Label}*/(this.findById('messageLabel'));
         if(!this.activePlayerAction) {
             const action = char.getActionForKey(v.event.key)
@@ -253,6 +252,13 @@ class Game extends eskv.App {
                 char.move(Facing.east, mmap);
             } else if(ip.isKeyDown(' ')) {
                 char.rest(mmap);
+            } else if(ip.isKeyDown('v')) {
+                const scroller = Game.get().findById('scroller');
+                if(scroller instanceof eskv.ScrollView && scroller.zoom) scroller.zoom = 0.5;
+                for(let p of mmap.metaTileMap.layer[MetaLayers.seen].iterAll()) {
+                    mmap.metaTileMap.setInLayer(MetaLayers.seen, p, 1);
+                    mmap.tileMap.clearCache();
+                }
             } else {
                 return;
             }    
@@ -278,7 +284,7 @@ class Game extends eskv.App {
                         this.activePlayerAction = null;
                         this.activePlayerActionData = null;
                     }
-                } else if(ip.isKeyDown('escape')) {
+                } else if(ip.isKeyDown('Escape')) {
                     ps.validCells = [];
                     messageLabel.text = 'canceled';
                     this.activePlayerAction = null;
@@ -305,4 +311,7 @@ Game.registerClass('MissionMap', MissionMap, 'Widget');
 const result = parse(markup);
 
 //Start the app
-Game.get().start();
+const game = Game.get()
+const mmap = /**@type {MissionMap}*/(game.findById('MissionMap'));
+mmap.setupLevel();
+game.start();

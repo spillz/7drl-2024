@@ -2,9 +2,11 @@
 
 import * as eskv from "../eskv/lib/eskv.js";
 import {Rect, Vec2} from "../eskv/lib/eskv.js";
+import { PRNG } from "../eskv/lib/modules/random.js";
 import { LayeredTileMap, SpriteSheet, SpriteWidget, TileMap } from "../eskv/lib/modules/sprites.js";
 import { Rifle } from "./action.js";
 import { Character, PlayerCharacter } from "./character.js";
+import { FacingVec } from "./facing.js";
 
 export const MetaLayers = {
     layout: 0, //Basic type of location
@@ -209,13 +211,53 @@ function floodFill(map, pos, fillType, blocker=LayoutTiles.wall) {
  * @returns 
  */
 function placeWalledRect(map, rect) {
-    const w = rect.w-1;
-    const h = rect.h-1;
+    const w = rect.w;
+    const h = rect.h;
     const p = rect.pos;
-    for(let pos of map.data.iterBetween(p, p.add([w,0]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.data.iterBetween(p, p.add([0,h]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.data.iterBetween(p.add([0,h]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
-    for(let pos of map.data.iterBetween(p.add([w,0]), p.add([w,h]))) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p, p.add([w,0]))) if(LayoutTiles.outside===map.get(pos)) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p, p.add([0,h]))) if(LayoutTiles.outside===map.get(pos)) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([0,h]), p.add([w,h]))) if(LayoutTiles.outside===map.get(pos)) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([w,0]), p.add([w,h]))) if(LayoutTiles.outside===map.get(pos)) map.set(pos, LayoutTiles.wall);
+}
+
+/**
+ * 
+ * @param {TileMap} map 
+ * @param {Rect} rect 
+ * @returns 
+ */
+function placeExteriorWalls(map, rect) {
+    const w = rect.w;
+    const h = rect.h;
+    const p = rect.pos;
+    for(let pos of map.data.iterBetween(p, p.add([w,0]))) if(map.data.hasAdjacent(pos, [LayoutTiles.outside])) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p, p.add([0,h]))) if(map.data.hasAdjacent(pos, [LayoutTiles.outside])) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([0,h]), p.add([w,h]))) if(map.data.hasAdjacent(pos, [LayoutTiles.outside])) map.set(pos, LayoutTiles.wall);
+    for(let pos of map.data.iterBetween(p.add([w,0]), p.add([w,h]))) if(map.data.hasAdjacent(pos, [LayoutTiles.outside])) map.set(pos, LayoutTiles.wall);
+}
+
+
+/**
+ * 
+ * @param {TileMap} map 
+ * @param {Vec2} pos 
+ */
+function placeValidDoor(map, pos) {
+    if( map.get(pos.add(FacingVec[0]))===LayoutTiles.wall && 
+        map.get(pos.add(FacingVec[2]))===LayoutTiles.wall &&
+        map.get(pos.add(FacingVec[1]))!==LayoutTiles.wall && 
+        map.get(pos.add(FacingVec[3]))!==LayoutTiles.wall) {
+        map.set(pos, LayoutTiles.doorway)
+        return true;
+    }
+    if( map.get(pos.add(FacingVec[1]))===LayoutTiles.wall && 
+        map.get(pos.add(FacingVec[3]))===LayoutTiles.wall &&
+        map.get(pos.add(FacingVec[0]))!==LayoutTiles.wall && 
+        map.get(pos.add(FacingVec[2]))!==LayoutTiles.wall) {
+        map.set(pos, LayoutTiles.doorway)
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -225,19 +267,102 @@ function placeWalledRect(map, rect) {
  * @param {eskv.rand.PRNG} rng 
  */
 function placeRoom(map, rect, rng) {
-    for(let p of map.data.iterRect(rect.grow(-1))) {
+    for(let p of map.data.iterRect([rect[0]+1,rect[1]+1,rect[2]-1,rect[3]-1])) {
         map.set(p, LayoutTiles.floor);
     }
     placeWalledRect(map, rect);
-    const doorPosX1 = rect[0]+1+rng.getRandomInt(rect[2]-2);
-    const doorPosX2 = rect[0]+1+rng.getRandomInt(rect[2]-2);
-    const doorPosY1 = rect[1]+1+rng.getRandomInt(rect[3]-2);
-    const doorPosY2 = rect[1]+1+rng.getRandomInt(rect[3]-2);
-    map.set(new Vec2([doorPosX1, rect[1]]), LayoutTiles.doorway);
-    map.set(new Vec2([doorPosX2, rect[1]+rect[3]-1]), LayoutTiles.doorway);
-    map.set(new Vec2([rect[0], doorPosY1]), LayoutTiles.doorway);
-    map.set(new Vec2([rect[0]+rect[2]-1, doorPosY2]), LayoutTiles.doorway);
 }
+
+/**
+ * 
+ * @param {TileMap} map 
+ * @param {Rect} rect 
+ * @param {eskv.rand.PRNG} rng 
+ */
+function placeDoorsInRoom(map, rect, rng){
+    if(!map.data.hasTypesBetween([rect[0],rect[1]],[rect[0]+rect[2],rect[1]], [LayoutTiles.doorway])) {
+        const doorPosX1 = rect[0]+1+rng.getRandomInt(rect[2]-2);
+        placeValidDoor(map, new Vec2([doorPosX1, rect[1]]));
+    }
+    if(!map.data.hasTypesBetween([rect[0],rect[1]+rect[3]],[rect[0]+rect[2],rect[1]+rect[3]], [LayoutTiles.doorway])) {
+        const doorPosX2 = rect[0]+1+rng.getRandomInt(rect[2]-2);
+        placeValidDoor(map, new Vec2([doorPosX2, rect[1]+rect[3]]));
+    }
+    if(!map.data.hasTypesBetween([rect[0],rect[1]],[rect[0],rect[1]+rect[3]], [LayoutTiles.doorway])) {
+        const doorPosY1 = rect[1]+1+rng.getRandomInt(rect[3]-2);
+        placeValidDoor(map, new Vec2([rect[0], doorPosY1]));
+    }
+    if(!map.data.hasTypesBetween([rect[0]+rect[2],rect[1]],[rect[0]+rect[2],rect[1]+rect[3]], [LayoutTiles.doorway])) {
+        const doorPosY2 = rect[1]+1+rng.getRandomInt(rect[3]-2);
+        placeValidDoor(map, new Vec2([rect[0]+rect[2], doorPosY2]));
+    }
+
+}
+
+
+/**
+ * Generates a binary space partition
+ * @param {Rect} rect The current room to divide
+ * @param {number} minSize Minimum size of a room in either dimension
+ * @param {number} hallSize The widgth of a hallway (should be < minSize)
+ * @param {Rect[]} rooms The list of rooms that have been added
+ * @param {PRNG} rng The random number generator
+ * @param {Rect} extent The rect containing the full map dimensions (assumed 0,0 upper left)
+ * @returns 
+ */
+function bspMansion(rect, minSize, hallSize, rooms, rng, extent, bias=0.5, hvBias=0, hhBias=0) {
+    if (rect.w <= minSize * 2 && rect.h <= minSize * 2 || 
+        rect.w <= hallSize ||
+        rect.h <= hallSize) {
+        // Add rect if it doesn't touch the border (with a 1-unit buffer for simplicity)
+        if (rect.x > 1 && rect.y > 1 && 
+            rect.x + rect.w < extent.w - 1 && 
+            rect.y + rect.h < extent.h - 1) {
+            rooms.push(rect);
+            return true;
+        }
+        return false;
+    }
+    //Choose split direction
+    const dir = rect.w<minSize+hallSize?0:
+                rect.h<minSize+hallSize?1:
+                rect.w>rect.h?1:
+                rect.h<rect.w?0:
+                rng.random()>bias? 1: 0;
+    if (dir===0) { // Horizontal splitter
+        //Add a hall in the splitter if room and long enough to justify
+        if(rect.h>=2*minSize+hallSize && rect.w>=2*minSize && rng.random()>hhBias) {
+            const b = Math.floor((rect.h - 2*minSize - hallSize)/4);
+            const split = Math.floor(rng.random() * (rect.h - 2*minSize - hallSize - 2*b)) + minSize +b;
+            if(bspMansion(new Rect([rect.x, rect.y + split, rect.w, hallSize]), minSize, hallSize, rooms, rng, extent, 0, hvBias, hhBias)) {
+                bspMansion(new Rect([rect.x, rect.y, rect.w, split]), minSize, hallSize, rooms, rng, extent, 0, hvBias, hhBias);
+                bspMansion(new Rect([rect.x, rect.y + split + hallSize, rect.w, rect.h - split - hallSize]), minSize, hallSize, rooms, rng, extent, 0, hvBias, hhBias);        
+                return true;
+            }
+        }
+        const b = Math.floor((rect.h - 2*minSize)/4);
+        const split = Math.floor(rng.random() * (rect.h - 2*minSize -2*b)) + minSize +b;
+        bspMansion(new Rect([rect.x, rect.y, rect.w, split]), minSize, hallSize, rooms, rng, extent, 0, hvBias, hhBias);
+        bspMansion(new Rect([rect.x, rect.y + split, rect.w, rect.h - split]), minSize, hallSize, rooms, rng, extent, 0, hvBias, hhBias);    
+    } else { // Vertical splitter
+        //Add a hall in the splitter if room and long enough to justify
+        if(rect.w>=2*minSize+hallSize && rect.h>=2*minSize && rng.random()>hvBias) {
+            const b = Math.floor((rect.w - 2*minSize - hallSize)/4);
+            const split = Math.floor(rng.random() * (rect.w - 2*minSize - hallSize -2*b)) + minSize + b;
+            if(bspMansion(new Rect([rect.x + split, rect.y, hallSize, rect.h]), minSize, hallSize, rooms, rng, extent, 1, hvBias, hhBias)) {
+                bspMansion(new Rect([rect.x, rect.y, split, rect.h]), minSize, hallSize, rooms, rng, extent, 1, hvBias, hhBias);
+                bspMansion(new Rect([rect.x + split + hallSize, rect.y, rect.w - split - hallSize, rect.h]), minSize, hallSize, rooms, rng, extent, 1, hvBias, hhBias);
+                return true;
+            }
+        } 
+        const b = Math.floor((rect.w - 2*minSize)/4);
+        const split = Math.floor(rng.random() * (rect.w - 2*minSize - 2*b)) + minSize + b;
+        bspMansion(new Rect([rect.x, rect.y, split, rect.h]), minSize, hallSize, rooms, rng, extent, 1, hvBias, hhBias);
+        bspMansion(new Rect([rect.x + split, rect.y, rect.w - split, rect.h]), minSize, hallSize, rooms, rng, extent, 1, hvBias, hhBias);    
+    }
+    return true;
+}
+
 
 /**
  * 
@@ -264,44 +389,13 @@ function generateMansionMap(map, rng) {
         mmap.set(p, LayoutTiles.outside);
     }
 
-    const perim = 10;
-    const houseRect = new Rect([0,0,tdim[0], tdim[1]]).grow(-perim);
-    const [hx, hy, hw, hh] = houseRect;
     /**@type {Rect[]} */
-    const rooms = []
-    const w2 = Math.floor(hw)/2;
-    const w4 = Math.floor(hw)/4;
-    const h2 = Math.floor(hh)/2;
-    const h4 = Math.floor(hh)/4;
-    const lSplit = rng.getRandomInt(w4, w2);
-    const rSplit = w2 + rng.getRandomInt(w4, w2);
-    const uSplit = rng.getRandomInt(h4, h2);
-    const dSplit = rng.getRandomInt(uSplit+4,Math.min(uSplit+7, hh-1));
-    const cuSplit = Math.max(rng.getRandomInt(uSplit-3, uSplit), 0);
-    const cdSplit = Math.min(rng.getRandomInt(dSplit+3, dSplit), hh-1);
-    const lSetback = -rng.getRandomInt(0, 5);
-    const rSetback = -rng.getRandomInt(0, 5);
-    const missing = rng.getRandomInt(0, 4); //0 = none, 1 = top, 2 = center, 3 = bottom
+    const rooms = [];
+    const mapRect = new Rect([0,0,w,h,]);
+    bspMansion(mapRect, 6, 3, rooms, rng, mapRect);
 
-    //Prefab rooms
-    //Center top
-    placeRoom(mmap, new Rect([hx+lSplit, hy, rSplit-lSplit+1, cuSplit+1]), rng);
-    //Center middle
-    placeRoom(mmap, new Rect([hx+lSplit, hy+cuSplit, rSplit-lSplit+1, cdSplit-cuSplit+1]), rng);
-    //Center bottom
-    placeRoom(mmap, new Rect([hx+lSplit, hy+cdSplit, rSplit-lSplit+1, hh-cdSplit+1]), rng);
-    //Left upper
-    placeRoom(mmap, new Rect([hx, hy+lSetback, lSplit+1, uSplit+1]), rng);
-    //Left hall
-    placeRoom(mmap, new Rect([hx, hy+lSetback+uSplit, lSplit+1, dSplit-uSplit+1]), rng);
-    //Left lower
-    placeRoom(mmap, new Rect([hx, hy+lSetback+dSplit, lSplit+1, hh-dSplit+1]), rng);
-    //Right upper
-    placeRoom(mmap, new Rect([hx+rSplit, hy+rSetback, hw-rSplit+1, uSplit+1]), rng);
-    //Right hall
-    placeRoom(mmap, new Rect([hx+rSplit, hy+rSetback+uSplit, hw-rSplit+1, dSplit-uSplit+1]), rng);
-    //Right lower
-    placeRoom(mmap, new Rect([hx+rSplit, hy+rSetback+dSplit, hw-rSplit+1, hh-dSplit+1]), rng);
+    for(let room of rooms) placeRoom(mmap, room, rng);
+    for(let room of rooms) placeDoorsInRoom(mmap, room, rng);
 
     /**@type {[number, number][]} */
     const trees = [];
@@ -503,16 +597,16 @@ export class MissionMap extends eskv.Widget {
     metaTileMap = new LayeredTileMap();
     /**@type {Character[]} */
     enemies = [
-        new Character({id:'Alfred'}),
-        new Character({id:'Bennie'}),
-        new Character({id:'Charlie'}),
-        new Character({id:'Devon'}),
+        new Character({id:'alfred'}),
+        new Character({id:'bennie'}),
+        new Character({id:'charlie'}),
+        new Character({id:'devon'}),
     ];
     entities = new eskv.Widget({hints:{h:1, w:1}});
     /**@type {Character[]} */
     playerCharacters = [
-        new PlayerCharacter({id:'Randy', x:0,y:0, activeCharacter:true}),
-        new PlayerCharacter({id:'Maria', activeCharacter:false})
+        new PlayerCharacter({id:'randy', x:0,y:0, activeCharacter:true}),
+        new PlayerCharacter({id:'maria', activeCharacter:false})
     ];
     characters = [...this.enemies, ...this.playerCharacters]
     /**@type {Character|null} */
@@ -523,18 +617,19 @@ export class MissionMap extends eskv.Widget {
         super();
         this.positionSelector = new PositionSelector()
         this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters];
-        this.rng.seed(100);
+        // this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
     setupLevel() {
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this, this.rng);
         this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
-        this.playerCharacters[0].actions.add(new Rifle());
+        this.playerCharacters[0].actionInventory = eskv.App.get().findById("firstPlayerInventory");
+        this.playerCharacters[0].addAction(new Rifle());
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;
-        this.setupLevel();
+        // this.setupLevel();
     }
     on_parent(e,o,v) {
         const scroller = this.parent;
