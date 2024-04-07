@@ -332,8 +332,18 @@ export class Character extends Entity {
         const tmap = mmap.metaTileMap;
         const traverse = tmap.getFromLayer(MetaLayers.traversible, npos)
         this.facing = dir;
-        //TODO: Make characters swap if they are stuck in a faceoff
-        if(traverse&binaryFacing[dir] && !mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos)&&e.state!=='dead', false)) {
+        if((traverse&binaryFacing[dir])===0) {
+            for(let e of mmap.entities.children) {
+                if(e instanceof Entity && e.pos.equals(npos)) {
+                    e.interact(mmap, this);
+                    this.actionsThisTurn--;
+                    return;
+                }
+            }
+        } else if(mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos)&&e.state!=='dead', false)) {
+            //TODO: Make characters swap if they are stuck in a faceoff
+            this.movementBlockedCount++;
+        } else {
             this.pos = eskv.v2(this.gpos); //Cut the old animation and move to where the character was
             this.gpos = npos;
             const anim = new eskv.WidgetAnimation();
@@ -345,8 +355,6 @@ export class Character extends Entity {
             }
             this.actionsThisTurn--;
             this.movementBlockedCount = Math.max(this.movementBlockedCount-1,0);
-        } else {
-            this.movementBlockedCount++;
         }
         if(this.activeCharacter) {
             this.updateFoV(mmap);
@@ -383,7 +391,7 @@ export class Character extends Entity {
      * @param {MissionMap} map 
      */
     updateFoV(map) {
-        const mmap = map.metaTileMap
+        const mmap = map.metaTileMap;
         this._coverPositions.clear();
         this._visibleLayer.fill(0);
         mmap.activeLayer = MetaLayers.allowsSight;
@@ -434,6 +442,11 @@ export class Character extends Entity {
                 else if(altSight && dir1[1]>0&& sight1&0b01000000) coversNext = true; //S
                 else if(altSight && dir1[0]<0&& sight1&0b10000000) coversNext = true; //W
                 prevPos = eskv.v2(p0)
+            }
+        }
+        for(let ent of map.entities.children) {
+            if(ent instanceof Entity) {
+                ent.visible = this._visibleLayer.get(ent.pos)>0;
             }
         }
         map.tileMap.clearCache();

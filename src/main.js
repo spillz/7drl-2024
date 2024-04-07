@@ -115,7 +115,7 @@ Game:
                 const helpHeader = window.app.findById('helpHeader');
                 helpHeader.text = [
                     'Controls',
-                    'Instuctions',
+                    'Instructions',
                     'Backstory',
                     'Agent Randy',
                     'Agent Maria',
