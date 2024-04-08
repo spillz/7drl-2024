@@ -32,6 +32,8 @@ export const LayoutTiles = {
     wall:4,
     doorway:5,
     window:6,
+    coveredWindow:7,
+    brokenWindow:8,
 }
 
 export const DecorationTiles = {
@@ -143,6 +145,28 @@ const MansionAutotiles = {
             0b1000: 2087-2,
             0b0101: 3111-2,
             0b1010: 39-2,
+    }),
+    coveredWindow:new eskv.sprites.AutoTiler('mansionCoveredWindow',
+        [LayoutTiles.coveredWindow], 
+        [LayoutTiles.wall, LayoutTiles.doorway, LayoutTiles.window, LayoutTiles.coveredWindow],
+        {
+            0b0001: 3111-2,
+            0b0010: 39-2,
+            0b0100: 1063-2,
+            0b1000: 2087-2,
+            0b0101: 3111-2,
+            0b1010: 39-2,
+    }),
+    brokenWindow:new eskv.sprites.AutoTiler('mansionBrokenWindow',
+        [LayoutTiles.brokenWindow], 
+        [LayoutTiles.wall, LayoutTiles.doorway, LayoutTiles.window, LayoutTiles.coveredWindow, LayoutTiles.brokenWindow],
+        {
+            0b0001: 3111-1,
+            0b0010: 39-1,
+            0b0100: 1063-1,
+            0b1000: 2087-1,
+            0b0101: 3111-1,
+            0b1010: 39-1,
     }),
 }
 
@@ -598,6 +622,7 @@ function generateMansionMap(map, rng) {
             MansionAutotiles.wall.autoTile(vpos, mmap, tmap);
             MansionAutotiles.doorway.autoTile(vpos, mmap, tmap);
             MansionAutotiles.window.autoTile(vpos, mmap, tmap);
+            MansionAutotiles.brokenWindow.autoTile(vpos, mmap, tmap);
         }
         let traversible = index===LayoutTiles.wall||index===LayoutTiles.window?0:0b1111;
         for(let e of map.entities.children) {
@@ -826,6 +851,38 @@ export class MissionMap extends eskv.Widget {
         scroller.bind('scrollY', (e,o,v)=>this.updateClipRegion(o));
         scroller.bind('zoom', (e,o,v)=>this.updateClipRegion(o));
         this.updateClipRegion(scroller);
+    }
+    /**
+     * 
+     * @param {Vec2} pos 
+     */
+    updateTileInfo(pos) {
+        const layout = this.metaTileMap.layer[MetaLayers.layout].get(pos);
+        const mmap = this.metaTileMap
+        mmap.activeLayer = MetaLayers.layout;
+        const tmap = this.tileMap;
+        tmap.activeLayer = 0;
+        if(layout in MansionTileIndexes) {
+            tmap.set(pos, MansionTileIndexes[layout]);
+            tmap.clearCache();
+        } else {
+            MansionAutotiles.wall.autoTile(pos, mmap, tmap);
+            MansionAutotiles.doorway.autoTile(pos, mmap, tmap);
+            MansionAutotiles.window.autoTile(pos, mmap, tmap);
+            MansionAutotiles.brokenWindow.autoTile(pos, mmap, tmap);
+        }
+        //TODO: Read this sight+traversal info from a dictionary of sight/traversal values
+        let traversible = layout===LayoutTiles.wall||layout===LayoutTiles.window?0:0b1111;
+        for(let e of this.entities.children) {
+            if(e instanceof Entity && e.pos.equals(pos)) traversible &= e.traversible;
+        }
+        this.metaTileMap.setInLayer(MetaLayers.traversible, pos, traversible);
+        let sight = (layout===LayoutTiles.wall?0:0b1111); //see through if not a wall
+        for(let e of this.entities.children) {
+            if(e instanceof Entity && e.pos.equals(pos)) sight &= e.allowsSight;
+        }
+        this.metaTileMap.setInLayer(MetaLayers.allowsSight, pos, sight);
+        
     }
     updateClipRegion(scroller) {
         this.tileMap.clipRegion = new Rect([

@@ -47,9 +47,13 @@ export class DoorWidget extends Entity {
     /**@type {{[id:string]: LayeredAnimationFrame[]|number[]}|null} */
     animationGroup = {
         'closed':[39],
-        'open':[3111],
-        'closing':[3111, 7],
-        'opening':[39, 7],
+        'open': [new LayeredAnimationFrame([3111],[[0.5,-0.5]])], //[3111],
+        'closing': [//new LayeredAnimationFrame([3111],[[0.5,-0.5]]),
+                    new LayeredAnimationFrame([7],[[0,-0.25]]),
+                    ], //[3111, 7],
+        'opening': [//new LayeredAnimationFrame([3111],[[0.5,-0.5]]),
+                    new LayeredAnimationFrame([7],[[0,-0.25]]),
+                    ], //[39, 7],
         'flattened':[new LayeredAnimationFrame([40, 8],[[0,-0.5],[0,-1.5]])],
         'destroyed':[new LayeredAnimationFrame([9, 41],[[0,-0.5],[0,-1.5]])],
         'falling':[10],

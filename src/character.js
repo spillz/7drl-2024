@@ -337,8 +337,15 @@ export class Character extends Entity {
                 if(e instanceof Entity && e.pos.equals(npos)) {
                     e.interact(mmap, this);
                     this.actionsThisTurn--;
-                    return;
+                    break;
                 }
+            }
+            if(this instanceof PlayerCharacter) {
+                if(mmap.metaTileMap.layer[MetaLayers.layout].get(npos)===LayoutTiles.window) {
+                    mmap.metaTileMap.layer[MetaLayers.layout].set(npos, LayoutTiles.brokenWindow);
+                    mmap.updateTileInfo(npos);
+                }
+
             }
         } else if(mmap.characters.reduce((accum,e)=>accum||e.gpos.equals(npos)&&e.state!=='dead', false)) {
             //TODO: Make characters swap if they are stuck in a faceoff
