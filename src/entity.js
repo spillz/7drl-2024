@@ -108,7 +108,7 @@ export class DoorWidget extends Entity {
             const bpos2 = bpos.add(FacingVec[rot]);
             const as = this.allowsSight;
             map.metaTileMap.layer[MetaLayers.allowsSight].set(this.pos, 0b1111);
-            // if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, 0b1111); //as|binaryFacing[rotr]
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, as|binaryFacing[rotr]); //as|binaryFacing[rotr]
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, (as&~binaryFacing[back])|binaryFacing[rot]);
             return true;
         }
@@ -119,7 +119,7 @@ export class DoorWidget extends Entity {
             const rot = (this.facing+3)%4;
             const bpos = this.pos.add(FacingVec[this.facing]);
             const bpos2 = bpos.add(FacingVec[rot]);
-            // if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, 0b1111);
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, 0b1111);
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, 0b1111);
             return true;
         }

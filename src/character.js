@@ -408,8 +408,8 @@ export class Character extends Entity {
             let prevPos = eskv.v2(this.gpos);
             let coversNext = false;
             let dir = dest.sub(cpos).scale(1/dest.dist(cpos));
-            // dir[0] = Math.round(dir[0]*2)/2;
-            // dir[1] = Math.round(dir[1]*2)/2;
+            if(Math.abs(dir[0])>Math.abs(dir[1])) dir[1] = 0;
+            else if(Math.abs(dir[1])>Math.abs(dir[0])) dir[0] = 0;
             for(let p of mmap.data.iterBetween(cpos, dest)) {
                 let p0 = eskv.v2([Math.round(p[0]),Math.round(p[1])]);
                 let p1 = eskv.v2(p0);
