@@ -304,7 +304,7 @@ export class Character extends Entity {
             i++;
             b = eskv.v2(rng.getRandomPos(map.w, map.h));
             if(map.metaTileMap.layer[MetaLayers.layout].get(b)===LayoutTiles.floor
-                &&!b.equals(a)) break; 
+                && b.dist(a)>15) break; 
         }
         this.patrolRoute = [a, b];
         this.gpos = eskv.v2(b);
@@ -407,6 +407,9 @@ export class Character extends Entity {
             const dest = eskv.v2(pBounds);//.add([0.5, 0.5]);
             let prevPos = eskv.v2(this.gpos);
             let coversNext = false;
+            let dir = dest.sub(cpos).scale(1/dest.dist(cpos));
+            // dir[0] = Math.round(dir[0]*2)/2;
+            // dir[1] = Math.round(dir[1]*2)/2;
             for(let p of mmap.data.iterBetween(cpos, dest)) {
                 let p0 = eskv.v2([Math.round(p[0]),Math.round(p[1])]);
                 let p1 = eskv.v2(p0);
@@ -416,39 +419,59 @@ export class Character extends Entity {
                 const addy = p[1]-p0[1];
                 if(addy>0) p1[1]+=1;
                 else if(addy<0) p1[1]-=1;
-                let dir0 = FacingVec[facingFromVec(eskv.v2(p0).sub(prevPos))];
-                let dir1 = FacingVec[facingFromVec(eskv.v2(p1).sub(prevPos))];
-                const sight0 = mmap.get(p0);
-                const sight1 = mmap.get(p1);
-                let altSight = cpos.dist(p0)>cpos.dist(p1);
+                // let dir0 = dir;
+                // let dir1 = dir;
+                // if(!cpos.equals(p)) {
+                //     let dist = eskv.v2(p0).dist(cpos)+2;
+                //     let dir0 = p0.sub(cpos).scale(1/p0.dist(cpos)); //p0.sub(prevPos); // p0.sub(cpos).scale(1/p0.dist(cpos)); //FacingVec[facingFromVec(eskv.v2(p0).sub(prevPos))];
+                //     let dir1 = p1.sub(cpos).scale(1/p1.dist(cpos)); //p1.sub(prevPos); // p1.sub(cpos).scale(1/p1.dist(cpos)); //FacingVec[facingFromVec(eskv.v2(p1).sub(prevPos))];    
+                //     dir0[0] = Math.round(dir0[0]*3)/3;
+                //     dir0[1] = Math.round(dir0[1]*3)/3;
+                //     dir1[0] = Math.round(dir1[0]*3)/3;
+                //     dir1[1] = Math.round(dir1[1]*3)/3;
+                // }
+                let sight0 = mmap.get(p0);
+                // if(Math.abs(p0[0]-prevPos[0])>0 && Math.abs(p0[1]-prevPos[1])>0 ) {
+                //     const ph = vec2(prevPos[0],p0[1]);
+                //     const pv = vec2(p0[0], prevPos[1]);
+                //     const sighth = mmap.get(ph)|~binaryFacing[facingFromVec(ph.sub(prevPos))];
+                //     const sightv = mmap.get(ph)|~binaryFacing[facingFromVec(pv.sub(prevPos))];
+                //     sight0 = sight0&(sighth)&(sightv);
+                // }
+                // const sight1 = mmap.get(p1);
+                // let altSight = cpos.dist(p0)>cpos.dist(p1);
                 let canContinue = false;
-                if(cpos.dist(p0)===0) canContinue = true;
-                else if(dir0[1]<0 && sight0&0b0001) canContinue = true; //N
-                else if(dir0[0]>0 && sight0&0b0010) canContinue = true; //E
-                else if(dir0[1]>0 && sight0&0b0100) canContinue = true; //S
-                else if(dir0[0]<0 && sight0&0b1000) canContinue = true; //W
-                if(!coversNext) {
+                if(     cpos.equals(p)) canContinue = true;
+                else if(dir[1]<0 && dir[0]===0 && sight0&0b0001) canContinue = true; //N
+                else if(dir[1]<0 && dir[0]>0   && sight0&0b0001 && sight0&0b0010) canContinue = true; //NE
+                else if(dir[0]>0 && dir[1]===0 && sight0&0b0010) canContinue = true; //E
+                else if(dir[1]>0 && dir[0]>0   && sight0&0b0100 && sight0&0b0010) canContinue = true; //SE
+                else if(dir[1]>0 && dir[0]===0 && sight0&0b0100) canContinue = true; //S
+                else if(dir[1]>0 && dir[0]<0   && sight0&0b0100 && sight0&0b1000) canContinue = true; //SW
+                else if(dir[0]<0 && dir[1]===0 && sight0&0b1000) canContinue = true; //W
+                else if(dir[1]<0 && dir[0]<0   && sight0&0b0001 && sight0&0b1000) canContinue = true; //NW
+                if(canContinue && !coversNext) {
                     this._visibleLayer[p0[0]+p0[1]*mmap.w] = 1;
                     if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);
-                    if(altSight) {
-                        this._visibleLayer[p1[0]+p1[1]*mmap.w] = 1;
-                        if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p1, 1);    
-                    }
                 } else {
+                    if(sight0===0) {
+                        this._visibleLayer[p0[0]+p0[1]*mmap.w] = 1;
+                        if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);                        
+                    }
                     this._coverPositions.add(p0);
-                    if(altSight) this._coverPositions.add(p0);;
+                    // if(altSight) this._coverPositions.add(p0);;
                 }
-                if(!canContinue) break
+                if(!canContinue) break;
                 coversNext = false;
-                if(dir0[1]<0 && sight0&0b00010000) coversNext = true; //N
-                else if(dir0[0]>0 && sight0&0b00100000) coversNext = true; //E
-                else if(dir0[1]>0 && sight0&0b01000000) coversNext = true; //S
-                else if(dir0[0]<0 && sight0&0b10000000) coversNext = true; //W
-                else if(altSight && dir1[1]<0&& sight1&0b00010000) coversNext = true; //N
-                else if(altSight && dir1[0]>0&& sight1&0b00100000) coversNext = true; //E
-                else if(altSight && dir1[1]>0&& sight1&0b01000000) coversNext = true; //S
-                else if(altSight && dir1[0]<0&& sight1&0b10000000) coversNext = true; //W
-                prevPos = eskv.v2(p0)
+                if(     dir[1]<0 && sight0&0b00010000) coversNext = true; //N
+                else if(dir[0]>0 && sight0&0b00100000) coversNext = true; //E
+                else if(dir[1]>0 && sight0&0b01000000) coversNext = true; //S
+                else if(dir[0]<0 && sight0&0b10000000) coversNext = true; //W
+                // else if(altSight && dir1[1]<0&& sight1&0b00010000) coversNext = true; //N
+                // else if(altSight && dir1[0]>0&& sight1&0b00100000) coversNext = true; //E
+                // else if(altSight && dir1[1]>0&& sight1&0b01000000) coversNext = true; //S
+                // else if(altSight && dir1[0]<0&& sight1&0b10000000) coversNext = true; //W
+                prevPos = eskv.v2(p0);
             }
         }
         for(let ent of map.entities.children) {
@@ -514,7 +537,7 @@ export class Character extends Entity {
                 const dest = this.patrolRoute[this.patrolTarget];
                 const moveCostGrid = new Grid2D([mmap.w, mmap.h]);
                 mmap.metaTileMap.layer[MetaLayers.layout].forEach((v,i)=>{
-                    moveCostGrid[i] = v===LayoutTiles.wall?Infinity:1;
+                    moveCostGrid[i] = v===LayoutTiles.wall||v===LayoutTiles.window||v===LayoutTiles.coveredWindow?Infinity:1;
                 });
                 for(let e of mmap.characters) {
                     if(e!==this) moveCostGrid.set(e.gpos, moveCostGrid.get(e.gpos)+(e.movementBlockedCount<=this.movementBlockedCount?4+this.movementBlockedCount*2:4));

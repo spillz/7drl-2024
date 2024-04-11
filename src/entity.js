@@ -3,9 +3,10 @@
 import * as eskv from "../eskv/lib/eskv.js";
 import {Rect, Vec2} from "../eskv/lib/eskv.js";
 import {parse} from "../eskv/lib/modules/markup.js";
-import {LayeredAnimationFrame, SpriteWidget} from "../eskv/lib/modules/sprites.js";
+import {LayeredAnimationFrame, LayeredTileMap, SpriteWidget, TileMap} from "../eskv/lib/modules/sprites.js";
 import { Character, PlayerCharacter } from "./character.js";
-import { MetaLayers, MissionMap } from "./map.js";
+import { Facing, FacingVec, binaryFacing } from "./facing.js";
+import { LayoutTiles, MetaLayers, MissionMap } from "./map.js";
 
 
 export class Entity extends SpriteWidget {
@@ -88,21 +89,38 @@ export class DoorWidget extends Entity {
         return this.state!=='closed'?0b1111:0;
     }
     get allowsSight() {
-        return this.state!=='closed'?0b1111:0;
+        return this.state==='closed'?0:
+                this.facing===Facing.north?0b0101:
+                this.facing===Facing.east?0b1010:
+                this.facing===Facing.south?0b0101:
+                0b1010; //west
     }
     /**@type {Entity['interact']} */
     interact(map, character) {
         if(character instanceof PlayerCharacter && this.lockState==='locked' && this.state==='closed') return false;
         if(this.state==='closed') {
             this.state = 'open';
-            map.metaTileMap.layer[MetaLayers.allowsSight].set(this.pos, this.allowsSight);
             map.metaTileMap.layer[MetaLayers.traversible].set(this.pos, this.traversible);
+            const rot = (this.facing+3)%4;
+            const rotr = (this.facing+1)%4;
+            const back = (this.facing+2)%4;
+            const bpos = this.pos.add(FacingVec[this.facing]);
+            const bpos2 = bpos.add(FacingVec[rot]);
+            const as = this.allowsSight;
+            map.metaTileMap.layer[MetaLayers.allowsSight].set(this.pos, 0b1111);
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, as|binaryFacing[rot]);
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, (as&~binaryFacing[this.facing])|binaryFacing[rotr]);
             return true;
         }
         if(this.state==='open') {
             this.state = 'closed';
             map.metaTileMap.layer[MetaLayers.allowsSight].set(this.pos, this.allowsSight);
             map.metaTileMap.layer[MetaLayers.traversible].set(this.pos, this.traversible);
+            const rot = (this.facing+3)%4;
+            const bpos = this.pos.add(FacingVec[this.facing]);
+            const bpos2 = bpos.add(FacingVec[rot]);
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, 0b1111);
+            if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, 0b1111);
             return true;
         }
         return false;
