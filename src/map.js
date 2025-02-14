@@ -1,9 +1,9 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {Rect, Vec2} from "../eskv/lib/eskv.js";
-import { PRNG } from "../eskv/lib/modules/random.js";
-import { LayeredAnimationFrame, LayeredTileMap, SpriteSheet, SpriteWidget, TileMap } from "../eskv/lib/modules/sprites.js";
+import * as eskv from "eskv/lib/eskv.js";
+import {Rect, Vec2} from "eskv/lib/eskv.js";
+import { PRNG } from "eskv/lib/modules/random.js";
+import { LayeredAnimationFrame, LayeredTileMap, SpriteSheet, SpriteWidget, TileMap } from "eskv/lib/modules/sprites.js";
 import { Rifle } from "./action.js";
 import { Character, PlayerCharacter } from "./character.js";
 import { DoorWidget, Entity } from "./entity.js";

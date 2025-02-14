@@ -1,9 +1,9 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {Rect, Vec2} from "../eskv/lib/eskv.js";
-import {parse} from "../eskv/lib/modules/markup.js";
-import { SpriteWidget } from "../eskv/lib/modules/sprites.js";
+import * as eskv from "eskv/lib/eskv.js";
+import {Rect, Vec2} from "eskv/lib/eskv.js";
+import {parse} from "eskv/lib/modules/markup.js";
+import { SpriteWidget } from "eskv/lib/modules/sprites.js";
 import { Character } from "./character.js";
 import { MissionMap } from "./map.js";
 

@@ -1,12 +1,12 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {vec2, Vec2, Grid2D} from "../eskv/lib/eskv.js";
+import * as eskv from "eskv/lib/eskv.js";
+import {vec2, Vec2, Grid2D} from "eskv/lib/eskv.js";
 import { ActionItem } from "./action.js";
 import { Entity } from "./entity.js";
 import { MissionMap, MetaLayers, LayoutTiles } from "./map.js";
 import { Facing, FacingVec, binaryFacing, facingFromVec } from "./facing.js"
-import { TileMap, laf, LayeredAnimationFrame } from "../eskv/lib/modules/sprites.js";
+import { TileMap, laf, LayeredAnimationFrame } from "eskv/lib/modules/sprites.js";
 
 /**@typedef {'patrolling'|'sleeping'|'hunting'|'hiding'|'surrendering'|'fleeing'|'dead'|'unconscious'|'shocked'} CharacterStates */
 /**@typedef {'standing'|'walking'|'dead'} AnimationStates */

@@ -1,6 +1,6 @@
 //@ts-check
 
-import {Vec2, vec2, Rect} from '../eskv/lib/eskv.js';
+import {Vec2, vec2, Rect} from 'eskv/lib/eskv.js';
 
 /**@readonly @enum {number}*/
 export const Facing = {

@@ -1,9 +1,9 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {Rect, Vec2} from "../eskv/lib/eskv.js";
-import {parse} from "../eskv/lib/modules/markup.js";
-import {LayeredAnimationFrame, LayeredTileMap, SpriteWidget, TileMap} from "../eskv/lib/modules/sprites.js";
+import * as eskv from "eskv/lib/eskv.js";
+import {Rect, Vec2} from "eskv/lib/eskv.js";
+import {parse} from "eskv/lib/modules/markup.js";
+import {LayeredAnimationFrame, LayeredTileMap, SpriteWidget, TileMap} from "eskv/lib/modules/sprites.js";
 import { Character, PlayerCharacter } from "./character.js";
 import { Facing, FacingVec, binaryFacing } from "./facing.js";
 import { LayoutTiles, MetaLayers, MissionMap } from "./map.js";

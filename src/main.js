@@ -1,7 +1,7 @@
 //@ts-check
 
-import * as eskv from "../eskv/lib/eskv.js";
-import {parse} from "../eskv/lib/modules/markup.js";
+import * as eskv from "eskv/lib/eskv.js";
+import {parse} from "eskv/lib/modules/markup.js";
 import { MetaLayers, MissionMap } from "./map.js";
 import { Character, PlayerCharacter} from "./character.js";
 import { Facing, FacingVec } from "./facing.js";
