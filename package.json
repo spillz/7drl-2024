@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/spillz/7drl-2024#readme",
   "dependencies": {
+    "eskv": "git+https://github.com/spillz/eskv.git",
     "howler": "^2.2.4"
   }
 }

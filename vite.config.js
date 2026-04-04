@@ -33,6 +33,6 @@ export default {
     base: './',
     build: {
       target: 'es2022', //es2019
-      minify: true,
+      minify: false,
     }
 };

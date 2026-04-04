@@ -191,6 +191,7 @@ class FPS extends eskv.Label {
         this._counter += tref - this._tref;
         this._frames += 1;
         const currentFPS = 1000/(tref-this._tref);
+        console.log("FPS update", tref, tref-this._tref, currentFPS);
         this._tref= tref;
         this._badFrameCount += currentFPS<50?1:0;
         if(currentFPS<this._worst) this._worst = currentFPS;
