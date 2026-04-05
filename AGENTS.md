@@ -22,6 +22,11 @@ This file defines repository-wide implementation expectations for human and AI c
    - Include usage examples for ESKV UI patterns when adding new UI elements.
    - Keep examples close to the code they describe (comments, docs, or design notes).
 
+
+5. **Run full-project TypeScript JS checks after edits.**
+   - Run `npx tsc --noEmit` (or `npm run typecheck`) after modifying code.
+   - Fix type-check errors before committing.
+
 ---
 
 ## ESKV UI usage example
