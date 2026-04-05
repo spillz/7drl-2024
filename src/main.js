@@ -40,7 +40,7 @@ Game:
                     align: 'left'
                 Label:
                     id: 'objectiveLabel'
-                    text: 'Objective: Eliminate all hostiles.'
+                    text: 'Objectives: Locate and arrest the target. No escapes. No SWAT casualties.'
                     align: 'left'
                 Label:
                     id: 'seedLabel'
