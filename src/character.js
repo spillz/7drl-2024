@@ -319,7 +319,6 @@ export class Character extends Entity {
         this.actionsThisTurn--;
         if(this.activeCharacter) {
             this.updateFoV(mmap);
-            this.updateCamera(mmap);
         }
     }
     /**
@@ -365,7 +364,6 @@ export class Character extends Entity {
         }
         if(this.activeCharacter) {
             this.updateFoV(mmap);
-            this.updateCamera(mmap);
         }
     }
     on_animationComplete(e, o, v) {
@@ -459,28 +457,6 @@ export class Character extends Entity {
     }
     /**
      * 
-     * @param {MissionMap} mmap 
-     */
-    updateCamera(mmap) {
-        const camera = /**@type {eskv.ScrollView}*/(eskv.App.get().findById('scroller'));
-        if(camera) {
-            const target = this.gpos.add(FacingVec[this.facing].scale(5));
-            const dist = target.dist(this.gpos);
-            //TODO: Put the camera a few spaces behind the player in the current facing
-            let X = Math.min(Math.max(target[0]+0.5-camera.w/camera.zoom/2, 0), mmap.w);
-            let Y = Math.min(Math.max(target[1]+0.5-camera.h/camera.zoom/2, 0), mmap.h);
-            const ts = eskv.App.get().tileSize;
-            X = Math.floor(X*ts)/ts
-            Y = Math.floor(Y*ts)/ts
-            const anim = new eskv.WidgetAnimation();
-            anim.add({ scrollX: X, scrollY: Y}, 250*dist/2 );
-            anim.start(camera);    
-        // if(eskv.v2([camera.scrollX, camera.scrollY]).dist([X,Y])>0.5) {
-        //     }
-        }
-    }
-    /**
-     * 
      * @param {ActionItem} actionItem
      * @param {MissionMap} mmap 
      * @param {import("./action.js").ActionResponseData} request
@@ -532,7 +508,6 @@ export class Character extends Entity {
         }
         this.actionsThisTurn = 2;
     }
-    /**@type {eskv.sprites.SpriteWidget['draw']} */
     draw(app, ctx) {
         if(this.activeCharacter || this.visibleToPlayer) {
             super.draw(app, ctx);

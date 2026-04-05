@@ -4,7 +4,6 @@ import * as eskv from "eskv/lib/eskv.js";
 import {Rect, Vec2} from "eskv/lib/eskv.js";
 import { PRNG } from "eskv/lib/modules/random.js";
 import { LayeredAnimationFrame, LayeredTileMap, SpriteSheet, SpriteWidget, TileMap } from "eskv/lib/modules/sprites.js";
-import { Rifle } from "./action.js";
 import { Character, PlayerCharacter } from "./character.js";
 import { DoorWidget, Entity } from "./entity.js";
 import { FacingVec } from "./facing.js";
@@ -837,8 +836,6 @@ export class MissionMap extends eskv.Widget {
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this, this.rng);
         this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
-        this.playerCharacters[0].actionInventory = eskv.App.get().findById("firstPlayerInventory");
-        this.playerCharacters[0].addAction(new Rifle());
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;

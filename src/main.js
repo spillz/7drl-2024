@@ -2,10 +2,10 @@
 
 import * as eskv from "eskv/lib/eskv.js";
 import {parse} from "eskv/lib/modules/markup.js";
-import { MetaLayers, MissionMap } from "./map.js";
-import { Character, PlayerCharacter} from "./character.js";
-import { Facing, FacingVec } from "./facing.js";
+import { MissionMap } from "./map.js";
 import { ActionItem } from "./action.js";
+import { Facing } from "./facing.js";
+import { GameState } from "./game_state.js";
 
 //@ts-ignore
 import spriteUrl from '/images/spritesheet.png';
@@ -184,7 +184,6 @@ class FPS extends eskv.Label {
     _worst = 300;
     _tref = Date.now()
     _badFrameCount = 0;
-    /**@type {eskv.Label['update']} */
     update(app, millis) {
         super.update(app, millis);
         const tref = Date.now()
@@ -206,10 +205,8 @@ class FPS extends eskv.Label {
 }
 
 class Game extends eskv.App {
-    /**@type {ActionItem|null} */
-    activePlayerAction = null;
-    /**@type {import("./action.js").ActionResponseData|null} */
-    activePlayerActionData = null;
+    /** @type {GameState|null} */
+    gameState = null;
     constructor(props={}) {
         super();
         Game.resources['sprites'] = new eskv.sprites.SpriteSheet(spriteUrl, 16);
@@ -221,86 +218,63 @@ class Game extends eskv.App {
     static get() {
         return /**@type {Game}*/(eskv.App.get());
     }
-    on_key_down(e, o, v) {
-        const ip = this.inputHandler;
-        if(ip===undefined) return;
-        const mmap = /**@type {MissionMap}*/(this.findById('MissionMap'))
-        const char = /**@type {PlayerCharacter}*/(this.findById('randy'));
+    /** @returns {MissionMap} */
+    getMissionMap() {
+        return /**@type {MissionMap}*/(this.findById('MissionMap'));
+    }
+    /** @returns {GameState} */
+    getGameState() {
+        if(this.gameState) return this.gameState;
+        const state = new GameState(this.getMissionMap());
+        this.gameState = state;
+        return state;
+    }
+    syncUiWithGameState() {
+        const state = this.getGameState();
+        const view = state.getView();
         const messageLabel = /**@type {eskv.Label}*/(this.findById('messageLabel'));
-        if(!this.activePlayerAction) {
-            const action = char.getActionForKey(v.event.key)
-            if(action) {
-                const response = char.takeAction(action, mmap);
-                if(response.result==='complete' || response.result==='notAvailable' || response.result==='invalid') {
-                    this.activePlayerAction = null;
-                    this.activePlayerActionData = null;
-                    messageLabel.text = response.message??'unknown action response';
-                } else if(response.result==='infoNeeded') {
-                    this.activePlayerAction = action;
-                    this.activePlayerActionData = response;
-                    const ps = mmap.positionSelector;
-                    messageLabel.text = response.message??'unknown action response';
-                    if(response.validTargetCharacters) ps.validCharacters = response.validTargetCharacters;
-                    if(response.validTargetPositions) ps.validCells = response.validTargetPositions;
-                }
-            } else if(ip.isKeyDown('w')) {
-                char.move(Facing.north, mmap);
-            } else if(ip.isKeyDown('a')) {
-                char.move(Facing.west, mmap);
-            } else if(ip.isKeyDown('s')) {
-                char.move(Facing.south, mmap);
-            } else if(ip.isKeyDown('d')) {
-                char.move(Facing.east, mmap);
-            } else if(ip.isKeyDown(' ')) {
-                char.rest(mmap);
-            } else if(ip.isKeyDown('v')) {
-                const scroller = Game.get().findById('scroller');
-                if(scroller instanceof eskv.ScrollView && scroller.zoom) scroller.zoom = 0.5;
-                for(let p of mmap.metaTileMap.layer[MetaLayers.seen].iterAll()) {
-                    mmap.metaTileMap.setInLayer(MetaLayers.seen, p, 1);
-                    mmap.tileMap.clearCache();
-                }
-            } else {
-                return;
-            }    
+        messageLabel.text = view.message;
+        const ps = this.getMissionMap().positionSelector;
+        ps.validCells = view.selectorCells;
+        ps.activeCell = view.selectorIndex;
+    }
+    updateCameraFromGameState() {
+        const camera = /**@type {eskv.ScrollView|null}*/(this.findById('scroller'));
+        const mmap = this.getMissionMap();
+        const active = mmap.activeCharacter;
+        if(!camera || !active) return;
+        const target = active.gpos.add([0.5, 0.5]);
+        let scrollX = Math.min(Math.max(target[0]-camera.w/camera.zoom/2, 0), mmap.w);
+        let scrollY = Math.min(Math.max(target[1]-camera.h/camera.zoom/2, 0), mmap.h);
+        const ts = eskv.App.get().tileSize;
+        scrollX = Math.floor(scrollX*ts)/ts;
+        scrollY = Math.floor(scrollY*ts)/ts;
+        camera.scrollX = scrollX;
+        camera.scrollY = scrollY;
+    }
+    on_key_down(e, o, v) {
+        const key = v?.event?.key;
+        if(typeof key!=='string') return;
+        const state = this.getGameState();
+        if (state.isAwaitingSelection()) {
+            if (key==='w') state.dispatchIntent({type:'moveSelection', direction: Facing.north});
+            else if (key==='a') state.dispatchIntent({type:'moveSelection', direction: Facing.west});
+            else if (key==='s') state.dispatchIntent({type:'moveSelection', direction: Facing.south});
+            else if (key==='d') state.dispatchIntent({type:'moveSelection', direction: Facing.east});
+            else if (key==='e') state.dispatchIntent({type:'confirmSelection'});
+            else if (key==='Escape') state.dispatchIntent({type:'cancelSelection'});
+            else return;
         } else {
-            const action = this.activePlayerAction
-            const actionData = this.activePlayerActionData;
-            const ps = mmap.positionSelector;
-            if(actionData?.validTargetCharacters) {
-                if(ip.isKeyDown('w')) {
-                    ps.moveActiveCell(FacingVec[Facing.north]);
-                } else if(ip.isKeyDown('a')) {
-                    ps.moveActiveCell(FacingVec[Facing.west]);
-                } else if(ip.isKeyDown('s')) {
-                    ps.moveActiveCell(FacingVec[Facing.south]);
-                } else if(ip.isKeyDown('d')) {
-                    ps.moveActiveCell(FacingVec[Facing.east]);
-                } else if(ip.isKeyDown('e')) {
-                    actionData.targetCharacter = ps.validCharacters[ps.activeCell];
-                    const response = char.takeAction(action, mmap, actionData);
-                    if(response.result==='complete') {
-                        ps.validCells = [];
-                        messageLabel.text = response.message??'unknown action response';
-                        this.activePlayerAction = null;
-                        this.activePlayerActionData = null;
-                    }
-                } else if(ip.isKeyDown('Escape')) {
-                    ps.validCells = [];
-                    messageLabel.text = 'canceled';
-                    this.activePlayerAction = null;
-                    this.activePlayerActionData = null;
-                }
-            }
+            if (key==='w') state.dispatchIntent({type:'move', direction: Facing.north});
+            else if (key==='a') state.dispatchIntent({type:'move', direction: Facing.west});
+            else if (key==='s') state.dispatchIntent({type:'move', direction: Facing.south});
+            else if (key==='d') state.dispatchIntent({type:'move', direction: Facing.east});
+            else if (key===' ') state.dispatchIntent({type:'rest'});
+            else if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
+            else state.dispatchIntent({type:'startActionFromKey', key});
         }
-        mmap.updateCharacterVisibility();
-        if(char.actionsThisTurn===0) {
-            for(let e of mmap.enemies) {
-                e.takeTurn(mmap);
-            }
-            char.actionsThisTurn=2;
-            mmap.updateCharacterVisibility(true);
-        }
+        this.syncUiWithGameState();
+        this.updateCameraFromGameState();
     }
 }
 
@@ -314,5 +288,9 @@ const result = parse(markup);
 //Start the app
 const game = Game.get()
 const mmap = /**@type {MissionMap}*/(game.findById('MissionMap'));
-mmap.setupLevel();
+const gameState = game.getGameState();
+gameState.setupLevel();
+mmap.playerCharacters[0].actionInventory = game.findById('firstPlayerInventory');
+game.syncUiWithGameState();
+game.updateCameraFromGameState();
 game.start();
