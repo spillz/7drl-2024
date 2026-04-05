@@ -99,3 +99,34 @@ Derelict Starbase
 Run-down Warehouse
 Offworld Military Base
 Private Mansion
+---
+
+Vertical Slice 00 Definition
+
+Mission Scope (VS-00)
+
+A vertical slice mission is considered complete when one map can be played from start to end with a clear objective and deterministic seed values.
+
+Objective
+
+- Objective ID: `vs0_secure_intel`
+- Objective text: `Secure intel from the mansion office and survive the extraction window.`
+
+Mission lifecycle states
+
+- `briefing`
+- `in_progress`
+- `success`
+- `failure`
+
+Done criteria
+
+1. Mission starts in `in_progress` after setup and seed assignment.
+2. Run seed and mission seed are visible in HUD/debug text.
+3. Objective title and objective status are visible in HUD.
+4. Same run seed + mission index yields the same mission seed.
+5. Mission exposes status transitions (`briefing` -> `in_progress` -> `success|failure`) through `GameState`.
+
+Seed derivation (VS-01)
+
+`missionSeed = runSeed + missionIndex * 9973`
