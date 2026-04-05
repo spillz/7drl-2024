@@ -291,6 +291,10 @@ export class Character extends Entity {
     setupForLevelStart(map, rng) {
         this._coverPositions = new Set(); // set of positions that have cover from the current location
         this._visibleLayer = new Grid2D([map.w, map.h]).fill(0);
+        this.state = 'patrolling';
+        this.animationState = 'standing';
+        this.actionsThisTurn = 2;
+        this.movementBlockedCount = 0;
         let i = 0;
         let a = eskv.vec2(1,1);
         let b = eskv.vec2(1,1);
@@ -529,6 +533,9 @@ export class PlayerCharacter extends Character {
      */
     setupForLevelStart(map) {
         this._coverPositions = new Set(); // set of positions that have cover from the current location
+        this.state = 'patrolling';
+        this.actionsThisTurn = 2;
+        this.movementBlockedCount = 0;
         this.animationGroup = characterAnimations[this.id];
         this.animationState = 'standing';
         if(this.activeCharacter) {

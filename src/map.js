@@ -832,9 +832,15 @@ export class MissionMap extends eskv.Widget {
         // this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
-    setupLevel() {
+    /**
+     * @param {number} seed
+     */
+    setupLevel(seed) {
+        this.rng.seed(seed);
+        this.entities.children = [];
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this, this.rng);
+        this.playerCharacters[1].setupForLevelStart(this, this.rng);
         this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
     }
     on_spriteSheet() {

@@ -116,6 +116,33 @@ export class Rifle extends ActionItem {
     }
 }
 
+export class ArrestAction extends ActionItem {
+    keyControl = 'g';
+    constructor() {
+        super();
+        this.label.text = 'Arrest';
+        this.sprite.frames = [867];
+    }
+    /** @type {ActionItem['request']} */
+    request(actor, map, response) {
+        if (response.targetCharacter instanceof Character && response.targetCharacter !== actor) {
+            response.targetCharacter.state = 'surrendering';
+            return { result: 'complete', message: `${response.targetCharacter.id} arrested` };
+        }
+        const adjacentTargets = [];
+        for (const candidate of map.enemies) {
+            if (candidate.state === 'dead') continue;
+            if (candidate.gpos.dist(actor.gpos) <= 1.1) {
+                adjacentTargets.push(candidate);
+            }
+        }
+        if (adjacentTargets.length === 0) {
+            return { result: 'notAvailable', message: 'Move adjacent to arrest target' };
+        }
+        return { result: 'infoNeeded', message: 'Select arrest target', validTargetCharacters: adjacentTargets };
+    }
+}
+
 export class Strafe extends ActionItem {
 
 }
