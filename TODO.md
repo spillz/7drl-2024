@@ -1,6 +1,31 @@
 Game related
 ============
 
+Key TODOs (next milestone)
+--------------------------
+
+1. Multi-level campaign with unique procedural map generation per level
+   - Build a `LevelDefinition`/`LevelGenerator` class pipeline to produce distinct mission types.
+   - Ensure each level has unique topology + style (layout rules, decorations, objective hooks).
+   - Keep deterministic seeds per run so replay/time-loop behavior stays consistent.
+
+2. Solid enemy AI that supports stealth + tactical firefights
+   - Add AI states: patrol, investigate, coordinate, suppress, flank, retreat.
+   - Improve perception model (sight, sound, memory, shared squad awareness).
+   - Add reliable pathfinding + cover selection + room-clearing behavior.
+
+3. Time mechanics that drive challenging squad-based play
+   - Implement deterministic timeline recording/replay for parallel runs.
+   - Allow one operator to schedule requests for the next loop (breach, suppress, scout, etc.).
+   - Build tools/UI for synchronized execution windows and failure recovery.
+
+4. Integrate the above into mission flow
+   - Objective design should require coordinated multi-agent timing.
+   - Tune difficulty around cross-loop cooperation instead of raw stats.
+
+Additional TODOs
+----------------
+
  - Map rendering
     - Put visibility on it's own layer instead of using visibility to darken and only
       partially re-render to speed up the render caching
