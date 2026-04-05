@@ -195,6 +195,11 @@ export class Character extends Entity {
     /**@type {Facing} */
     facing = Facing.north;
     constitution = 1;
+    maxHealth = 3;
+    health = 3;
+    /** Lower means harder to suppress, higher means easier */
+    suppressibility = 1;
+    suppressionLevel = 0;
     /**@type {CharacterStates} */
     priorState = 'patrolling';
     /**@type {CharacterStates} */
@@ -295,6 +300,9 @@ export class Character extends Entity {
         this.animationState = 'standing';
         this.actionsThisTurn = 2;
         this.movementBlockedCount = 0;
+        this.health = this.maxHealth;
+        this.suppressionLevel = 0;
+        this.suppressed = false;
         let i = 0;
         let a = eskv.vec2(1,1);
         let b = eskv.vec2(1,1);
@@ -314,6 +322,11 @@ export class Character extends Entity {
         this.gpos = eskv.v2(b);
         [this.x, this.y] = this.gpos;
         this.animationGroup = this.id[0]==='d'?characterAnimations.greenShirt:characterAnimations.whiteShirt;
+        this.maxHealth = this.id === 'alfred' ? 4 : 3;
+        this.health = this.maxHealth;
+        this.suppressibility = this.id === 'alfred' ? 0.45 : 0.75;
+        this.suppressionLevel = 0;
+        this.suppressed = false;
         this.animationState = 'standing';
     }
     /**
@@ -377,12 +390,25 @@ export class Character extends Entity {
     }
     /**
      * @param {'piercing'|'shock'|'force'} damageType
+     * @param {number=} amount
      */
-    takeDamage(damageType) {
+    takeDamage(damageType, amount = 1) {
         if(damageType==='piercing') {
-            this.state = 'dead';
-            this.animationState = 'dead';
+            this.health -= amount;
+            if (this.health <= 0) {
+                this.health = 0;
+                this.state = 'dead';
+                this.animationState = 'dead';
+            }
         }
+    }
+    /**
+     * @param {number} amount
+     */
+    applySuppression(amount) {
+        const effective = amount * this.suppressibility;
+        this.suppressionLevel += effective;
+        this.suppressed = this.suppressionLevel >= 2;
     }
     /**
      * 
@@ -536,6 +562,11 @@ export class PlayerCharacter extends Character {
         this.state = 'patrolling';
         this.actionsThisTurn = 2;
         this.movementBlockedCount = 0;
+        this.maxHealth = 4;
+        this.health = this.maxHealth;
+        this.suppressibility = 0.9;
+        this.suppressionLevel = 0;
+        this.suppressed = false;
         this.animationGroup = characterAnimations[this.id];
         this.animationState = 'standing';
         if(this.activeCharacter) {

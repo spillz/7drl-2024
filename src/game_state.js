@@ -2,8 +2,8 @@
 
 import { Facing, FacingVec } from "./facing.js";
 import { MetaLayers, MissionMap } from "./map.js";
-import { PlayerCharacter } from "./character.js";
-import { ArrestAction, Rifle } from "./action.js";
+import { Character, PlayerCharacter } from "./character.js";
+import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./action.js";
 
 /**
  * @typedef {'notStarted'|'active'|'success'|'failure'} MissionStatus
@@ -72,12 +72,103 @@ import { ArrestAction, Rifle } from "./action.js";
  *   timelineTick: number,
  *   timelineTurn: number,
  *   replayMode: boolean,
+ *   squadStatusText: string,
+ *   enemyStatusText: string,
+ *   signalStatusText: string,
  * }} GameView
  */
+
+/**
+ * @typedef {'player'|'enemy'|'target'} CharacterRole
+ */
+
+/**
+ * @typedef {'patrol'|'investigate'|'engage'|'unaware'|'usingSkype'|'seekingGuards'|'surrendering'|'dead'} CharacterBehaviorState
+ */
+
+/**
+ * @typedef {'standing'|'prone'} CharacterPosture
+ */
+
+/**
+ * @typedef {'combatEffective'|'wounded'|'critical'|'unconscious'|'detained'|'dead'} CharacterCasualtyState
+ */
+
+/**
+ * @typedef {'unaware'|'aware'|'investigating'|'engaging'} CharacterAwarenessState
+ */
+
+/**
+ * Authoritative character state for deterministic simulation.
+ * UI widgets should only mirror this data, not own it.
+ */
+export class CharacterStateData {
+    /** @type {string} */
+    id = '';
+    /** @type {CharacterRole} */
+    role = 'enemy';
+    /** @type {CharacterBehaviorState} */
+    behaviorState = 'patrol';
+    /** @type {CharacterBehaviorState} */
+    priorBehaviorState = 'patrol';
+    /** @type {CharacterBehaviorState} */
+    resumeBehaviorState = 'patrol';
+    /** @type {number} */
+    actionsRemaining = 2;
+    /** @type {number} */
+    movementBlockedCount = 0;
+    /** @type {CharacterPosture} */
+    posture = 'standing';
+    /** @type {CharacterCasualtyState} */
+    casualtyState = 'combatEffective';
+    /** @type {CharacterAwarenessState} */
+    awarenessState = 'unaware';
+    /** @type {number} */
+    awarenessCooldown = 0;
+    /**
+     * Suppression points are deterministic pressure from incoming fire.
+     * 0-1 = pressured, 2+ = suppressed (reduced initiative/options).
+     * @type {number}
+     */
+    suppressionPoints = 0;
+    /** @type {boolean} */
+    isSuppressed = false;
+    /** @type {number} */
+    suppressibility = 1;
+    /** @type {boolean} */
+    hasCover = false;
+    /** @type {import('eskv/lib/eskv.js').Vec2 | null} */
+    lastKnownThreatPos = null;
+    /** @type {import('eskv/lib/eskv.js').Vec2[]} */
+    patrolRoute = [];
+    /** @type {number} */
+    patrolTarget = -1;
+    /** @type {import('eskv/lib/eskv.js').Vec2} */
+    gridPosition;
+
+    /**
+     * @param {Character} character
+     * @param {CharacterRole} role
+     */
+    constructor(character, role) {
+        this.id = character.id;
+        this.role = role;
+        this.gridPosition = character.gpos.add([0, 0]);
+        this.actionsRemaining = character.actionsThisTurn;
+        this.movementBlockedCount = character.movementBlockedCount;
+        this.suppressionPoints = character.suppressionLevel;
+        this.isSuppressed = this.suppressionPoints >= 2;
+        this.suppressibility = character.suppressibility;
+        this.patrolRoute = character.patrolRoute.map((pos) => pos.add([0, 0]));
+        this.patrolTarget = character.patrolTarget;
+    }
+}
 
 export class GameState {
     /** @type {MissionMap} */
     missionMap;
+    /** @type {Map<string, CharacterStateData>} */
+    characterState = new Map();
     /** @type {import('./action.js').ActionItem | null} */
     activePlayerAction = null;
     /** @type {import('./action.js').ActionResponseData | null} */
@@ -134,14 +225,23 @@ export class GameState {
 
     setupMissionFromCurrentSeeds() {
         this.missionMap.setupLevel(this.missionSeed);
+        this.initializeCharacterState();
+        for (const playerCharacter of this.missionMap.playerCharacters) {
+            if (![...playerCharacter.actions].some((action) => action instanceof Rifle)) {
+                playerCharacter.addAction(new Rifle());
+            }
+            if (![...playerCharacter.actions].some((action) => action instanceof ArrestAction)) {
+                playerCharacter.addAction(new ArrestAction());
+            }
+            if (![...playerCharacter.actions].some((action) => action instanceof StealthTakedownAction)) {
+                playerCharacter.addAction(new StealthTakedownAction());
+            }
+            if (![...playerCharacter.actions].some((action) => action instanceof DecoyAction)) {
+                playerCharacter.addAction(new DecoyAction());
+            }
+        }
         const player = this.getActivePlayer();
         if (!player) return;
-        if (![...player.actions].some((action) => action instanceof Rifle)) {
-            player.addAction(new Rifle());
-        }
-        if (![...player.actions].some((action) => action instanceof ArrestAction)) {
-            player.addAction(new ArrestAction());
-        }
         player.updateFoV(this.missionMap);
         this.missionMap.updateCharacterVisibility(true);
         this.activePlayerAction = null;
@@ -155,6 +255,232 @@ export class GameState {
         this.missionStatus = 'active';
         this.message = `Mission started (run:${this.runSeed}, mission:${this.missionIndex}, seed:${this.missionSeed})`;
         this.updateMissionOutcome();
+    }
+
+    initializeCharacterState() {
+        this.characterState = new Map();
+        for (const character of this.missionMap.playerCharacters) {
+            const data = new CharacterStateData(character, 'player');
+            data.behaviorState = character.state === 'dead' ? 'dead' : 'patrol';
+            data.awarenessState = 'engaging';
+            this.characterState.set(character.id, data);
+        }
+        for (const enemy of this.missionMap.enemies) {
+            const role = enemy.id === this.missionTargetId ? 'target' : 'enemy';
+            const data = new CharacterStateData(enemy, role);
+            if (enemy.state === 'dead') {
+                data.behaviorState = 'dead';
+                data.awarenessState = 'unaware';
+            } else if (role === 'target') {
+                data.behaviorState = 'unaware';
+                data.resumeBehaviorState = 'usingSkype';
+                data.awarenessState = 'unaware';
+            } else {
+                data.behaviorState = 'patrol';
+                data.awarenessState = 'unaware';
+            }
+            this.characterState.set(enemy.id, data);
+        }
+        this.applyCharacterStateToMap();
+    }
+
+    syncCharacterStateFromMap() {
+        for (const character of this.missionMap.characters) {
+            const data = this.characterState.get(character.id);
+            if (!data) continue;
+            data.gridPosition = character.gpos.add([0, 0]);
+            data.actionsRemaining = character.actionsThisTurn;
+            data.movementBlockedCount = character.movementBlockedCount;
+            data.patrolRoute = character.patrolRoute.map((pos) => pos.add([0, 0]));
+            data.patrolTarget = character.patrolTarget;
+            data.suppressionPoints = character.suppressionLevel;
+            data.isSuppressed = data.suppressionPoints >= 2;
+            data.suppressibility = character.suppressibility;
+            if (character.state === 'dead') {
+                data.priorBehaviorState = data.behaviorState;
+                data.behaviorState = 'dead';
+                data.casualtyState = 'dead';
+                data.awarenessState = 'unaware';
+            } else if (character.state === 'surrendering') {
+                data.priorBehaviorState = data.behaviorState;
+                data.behaviorState = 'surrendering';
+                data.casualtyState = 'detained';
+            } else if (data.casualtyState === 'dead' || data.casualtyState === 'detained') {
+                data.casualtyState = 'combatEffective';
+            }
+        }
+    }
+
+    applyCharacterStateToMap() {
+        for (const character of this.missionMap.characters) {
+            const data = this.characterState.get(character.id);
+            if (!data) continue;
+            character.actionsThisTurn = data.actionsRemaining;
+            character.movementBlockedCount = data.movementBlockedCount;
+            character.suppressed = data.isSuppressed;
+            character.suppressionLevel = data.suppressionPoints;
+            character.suppressibility = data.suppressibility;
+            character.patrolRoute = data.patrolRoute.map((pos) => pos.add([0, 0]));
+            character.patrolTarget = data.patrolTarget;
+            character.state = this.toCharacterWidgetState(data.behaviorState);
+        }
+    }
+
+    /**
+     * @param {CharacterBehaviorState} behaviorState
+     * @returns {import('./character.js').CharacterStates}
+     */
+    toCharacterWidgetState(behaviorState) {
+        if (behaviorState === 'dead') return 'dead';
+        if (behaviorState === 'surrendering') return 'surrendering';
+        return 'patrolling';
+    }
+
+    updateTacticalStateFromMap() {
+        const coverLayer = this.missionMap.metaTileMap.layer[MetaLayers.cover];
+        for (const character of this.missionMap.characters) {
+            const data = this.characterState.get(character.id);
+            if (!data) continue;
+            data.hasCover = coverLayer.get(character.gpos) > 0;
+            data.isSuppressed = data.suppressionPoints >= 2;
+            if (data.casualtyState === 'dead' || data.casualtyState === 'detained') {
+                data.actionsRemaining = 0;
+            } else if (data.posture === 'prone' || data.isSuppressed) {
+                data.actionsRemaining = Math.min(data.actionsRemaining, 1);
+            }
+        }
+    }
+
+    decaySuppression() {
+        for (const data of this.characterState.values()) {
+            if (data.casualtyState === 'dead' || data.casualtyState === 'detained') continue;
+            const decay = data.hasCover ? 2 : 1;
+            data.suppressionPoints = Math.max(0, data.suppressionPoints - decay);
+            data.isSuppressed = data.suppressionPoints >= 2;
+        }
+    }
+
+    advanceTransientSignals() {
+        this.missionMap.soundEvents = this.missionMap.soundEvents
+            .map((event) => ({ ...event, ttl: event.ttl - 1 }))
+            .filter((event) => event.ttl > 0);
+        this.missionMap.decoyEvents = this.missionMap.decoyEvents
+            .map((event) => ({ ...event, ttl: event.ttl - 1 }))
+            .filter((event) => event.ttl > 0);
+    }
+
+    /**
+     * @param {CharacterAwarenessState} awareness
+     * @returns {number}
+     */
+    awarenessRank(awareness) {
+        if (awareness === 'engaging') return 3;
+        if (awareness === 'investigating') return 2;
+        if (awareness === 'aware') return 1;
+        return 0;
+    }
+
+    /**
+     * @param {CharacterAwarenessState} current
+     * @param {CharacterAwarenessState} incoming
+     * @returns {CharacterAwarenessState}
+     */
+    maxAwareness(current, incoming) {
+        return this.awarenessRank(incoming) > this.awarenessRank(current) ? incoming : current;
+    }
+
+    updateAwarenessStateFromPerception() {
+        const player = this.getActivePlayer();
+        if (!player) return;
+        const communicatingEnemies = this.missionMap.enemies
+            .filter((enemy) => {
+                const data = this.characterState.get(enemy.id);
+                if (!data) return false;
+                return data.awarenessState === 'investigating' || data.awarenessState === 'engaging';
+            });
+        for (const enemy of this.missionMap.enemies) {
+            const data = this.characterState.get(enemy.id);
+            if (!data) continue;
+            if (data.behaviorState === 'dead' || data.behaviorState === 'surrendering') continue;
+            const playerData = this.characterState.get(player.id);
+            const rawCanSeePlayer = enemy.canSee(player, this.missionMap);
+            const distToPlayer = enemy.gpos.dist(player.gpos);
+            const canSeePlayer = rawCanSeePlayer && !(playerData?.hasCover && distToPlayer > 3);
+            const heardSound = this.missionMap.soundEvents.some((event) => event.source !== enemy.id && event.position.dist(enemy.gpos) <= event.radius);
+            const noticedDecoy = this.missionMap.decoyEvents.some((event) => event.source !== enemy.id && event.position.dist(enemy.gpos) <= event.radius);
+            const allyCommunicated = communicatingEnemies.some((ally) => ally !== enemy && ally.gpos.dist(enemy.gpos) <= 8);
+            let nextAwareness = data.awarenessState;
+            if (canSeePlayer && distToPlayer <= 5) {
+                nextAwareness = 'engaging';
+                data.awarenessCooldown = 2;
+            } else if (canSeePlayer || heardSound) {
+                nextAwareness = this.maxAwareness(nextAwareness, 'investigating');
+                data.awarenessCooldown = 2;
+                if (!canSeePlayer && heardSound && this.missionMap.soundEvents.length > 0) {
+                    data.lastKnownThreatPos = this.missionMap.soundEvents[0].position.add([0, 0]);
+                }
+            } else if (noticedDecoy) {
+                nextAwareness = this.maxAwareness(nextAwareness, 'aware');
+                data.awarenessCooldown = Math.max(data.awarenessCooldown, 1);
+                if (this.missionMap.decoyEvents.length > 0) {
+                    data.lastKnownThreatPos = this.missionMap.decoyEvents[0].position.add([0, 0]);
+                }
+            } else if (allyCommunicated) {
+                nextAwareness = this.maxAwareness(nextAwareness, 'aware');
+                data.awarenessCooldown = Math.max(data.awarenessCooldown, 1);
+            } else if (data.awarenessCooldown > 0) {
+                data.awarenessCooldown--;
+            } else if (data.awarenessState === 'engaging') {
+                nextAwareness = 'investigating';
+            } else if (data.awarenessState === 'investigating') {
+                nextAwareness = 'aware';
+            } else if (data.awarenessState === 'aware') {
+                nextAwareness = 'unaware';
+            }
+            data.awarenessState = nextAwareness;
+        }
+    }
+
+    updateEnemyBehaviorStateFromPerception() {
+        const player = this.getActivePlayer();
+        if (!player) return;
+        for (const enemy of this.missionMap.enemies) {
+            const data = this.characterState.get(enemy.id);
+            if (!data) continue;
+            if (data.behaviorState === 'dead' || data.behaviorState === 'surrendering') continue;
+            const canSeePlayer = enemy.canSee(player, this.missionMap);
+            const playerDistance = enemy.gpos.dist(player.gpos);
+            let nextState = data.behaviorState;
+            if (canSeePlayer) {
+                data.lastKnownThreatPos = player.gpos.add([0, 0]);
+            }
+            if (data.role === 'target') {
+                if (data.behaviorState === 'unaware' && canSeePlayer) {
+                    nextState = 'usingSkype';
+                } else if (data.behaviorState === 'usingSkype' && canSeePlayer && playerDistance <= 6) {
+                    nextState = 'seekingGuards';
+                } else if (data.behaviorState === 'seekingGuards' && canSeePlayer) {
+                    nextState = 'engage';
+                }
+                if (data.awarenessState === 'engaging' && !data.isSuppressed) {
+                    nextState = 'engage';
+                } else if (data.awarenessState === 'investigating' && data.behaviorState === 'unaware') {
+                    nextState = 'usingSkype';
+                }
+            } else {
+                if ((canSeePlayer && playerDistance <= 5 && !data.isSuppressed) || data.awarenessState === 'engaging') {
+                    nextState = 'engage';
+                } else if (canSeePlayer || data.awarenessState === 'investigating') {
+                    nextState = 'investigate';
+                } else if (data.behaviorState === 'investigate' || data.behaviorState === 'engage') {
+                    nextState = 'patrol';
+                }
+            }
+            if (nextState !== data.behaviorState) {
+                data.priorBehaviorState = data.behaviorState;
+                data.behaviorState = nextState;
+            }
+        }
     }
 
     initializeObjectives() {
@@ -263,6 +589,12 @@ export class GameState {
         if (progressedTurn) {
             this.resolveTurnProgression(player);
         }
+        this.syncCharacterStateFromMap();
+        this.updateTacticalStateFromMap();
+        this.updateAwarenessStateFromPerception();
+        this.updateEnemyBehaviorStateFromPerception();
+        this.applyCharacterStateToMap();
+        this.advanceTransientSignals();
         this.updateMissionOutcome();
         if (!suppressTimeline) {
             this.timelineTick++;
@@ -348,10 +680,26 @@ export class GameState {
     resolveTurnProgression(player) {
         this.missionMap.updateCharacterVisibility();
         if (player.actionsThisTurn !== 0) return;
+        this.syncCharacterStateFromMap();
+        this.updateTacticalStateFromMap();
+        this.decaySuppression();
+        this.updateAwarenessStateFromPerception();
+        this.updateEnemyBehaviorStateFromPerception();
+        this.applyCharacterStateToMap();
         for (const enemy of this.missionMap.enemies) {
             enemy.takeTurn(this.missionMap);
         }
+        this.syncCharacterStateFromMap();
+        this.updateTacticalStateFromMap();
+        this.updateAwarenessStateFromPerception();
+        this.updateEnemyBehaviorStateFromPerception();
+        this.applyCharacterStateToMap();
+        this.advanceTransientSignals();
         player.actionsThisTurn = 2;
+        const playerData = this.characterState.get(player.id);
+        if (playerData) {
+            playerData.actionsRemaining = 2;
+        }
         this.timelineTurn++;
         this.missionMap.updateCharacterVisibility(true);
     }
@@ -376,8 +724,14 @@ export class GameState {
         return this.missionMap.enemies.find((enemy) => enemy.id === this.missionTargetId);
     }
 
+    /** @returns {CharacterStateData | undefined} */
+    getMissionTargetState() {
+        return this.characterState.get(this.missionTargetId);
+    }
+
     updateMissionOutcome() {
         const target = this.getMissionTarget();
+        const targetState = this.getMissionTargetState();
         const locateObjective = this.objectives.find((o) => o.id === 'locateTarget');
         const arrestObjective = this.objectives.find((o) => o.id === 'arrestTarget');
         const escapeObjective = this.objectives.find((o) => o.id === 'preventTargetEscape');
@@ -389,17 +743,24 @@ export class GameState {
         if (target && this.getActivePlayer()?.canSee(target, this.missionMap)) {
             if (locateObjective) locateObjective.state = 'complete';
         }
-        const targetArrested = target?.state === 'surrendering';
+        const targetArrested = targetState?.behaviorState === 'surrendering';
         if (targetArrested && arrestObjective) {
             arrestObjective.state = 'complete';
         }
 
-        const aliveGuards = this.missionMap.enemies.filter((enemy) => enemy.id !== this.missionTargetId && enemy.state !== 'dead');
+        const aliveGuards = this.missionMap.enemies.filter((enemy) => {
+            if (enemy.id === this.missionTargetId) return false;
+            const data = this.characterState.get(enemy.id);
+            return data ? data.behaviorState !== 'dead' : enemy.state !== 'dead';
+        });
         const targetEscaped = target
             ? this.missionTargetHasMoved && this.isAtMapBoundary(target.gpos[0], target.gpos[1]) && aliveGuards.length > 0
             : false;
-        const anyPlayerDead = this.missionMap.playerCharacters.some((pc) => pc.state === 'dead');
-        if (target?.state === 'dead' && !targetArrested) {
+        const anyPlayerDead = this.missionMap.playerCharacters.some((pc) => {
+            const data = this.characterState.get(pc.id);
+            return data ? data.behaviorState === 'dead' : pc.state === 'dead';
+        });
+        if (targetState?.behaviorState === 'dead' && !targetArrested) {
             if (arrestObjective) arrestObjective.state = 'failed';
             if (escapeObjective && escapeObjective.state !== 'failed') escapeObjective.state = 'pending';
             if (squadObjective) squadObjective.state = anyPlayerDead ? 'failed' : 'pending';
@@ -441,6 +802,32 @@ export class GameState {
             const prefix = objective.state === 'complete' ? '[✓]' : objective.state === 'failed' ? '[✗]' : '[ ]';
             return `${prefix} ${objective.text}`;
         }).join(' | ');
+    }
+
+    squadStatusSummary() {
+        return this.missionMap.playerCharacters.map((character) => {
+            const data = this.characterState.get(character.id);
+            const hp = `${character.health}/${character.maxHealth}`;
+            const sup = data ? data.suppressionPoints.toFixed(1) : character.suppressionLevel.toFixed(1);
+            const awareness = data ? data.awarenessState : 'engaging';
+            return `${character.id}:HP ${hp} SUP ${sup} AWR ${awareness}`;
+        }).join(' | ');
+    }
+
+    enemyStatusSummary() {
+        const visibleEnemies = this.missionMap.enemies.filter((enemy) => enemy.visibleToPlayer && enemy.state !== 'dead');
+        if (visibleEnemies.length === 0) return 'No visible enemies';
+        return visibleEnemies.map((enemy) => {
+            const data = this.characterState.get(enemy.id);
+            const hp = `${enemy.health}/${enemy.maxHealth}`;
+            const sup = data ? data.suppressionPoints.toFixed(1) : enemy.suppressionLevel.toFixed(1);
+            const awareness = data ? data.awarenessState : 'unaware';
+            return `${enemy.id}:HP ${hp} SUP ${sup} AWR ${awareness}`;
+        }).join(' | ');
+    }
+
+    signalStatusSummary() {
+        return `sound:${this.missionMap.soundEvents.length} decoy:${this.missionMap.decoyEvents.length}`;
     }
 
     /**
@@ -531,6 +918,9 @@ export class GameState {
             timelineTick: this.timelineTick,
             timelineTurn: this.timelineTurn,
             replayMode: this.replayMode,
+            squadStatusText: this.squadStatusSummary(),
+            enemyStatusText: this.enemyStatusSummary(),
+            signalStatusText: this.signalStatusSummary(),
         };
     }
 }
