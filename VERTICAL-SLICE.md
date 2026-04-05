@@ -41,9 +41,11 @@ One complete mission loop for the vertical slice is now locked to:
 ## VS-04 — Objective system v1
 - [x] Implement one objective type end-to-end.
 - [x] Hook objective success/failure to mission success/failure.
+- [x] Require both objective completion and explicit fail-state tracking.
 - **Acceptance criteria:**
   - Objective transitions: active -> complete/failed.
   - Mission result reflects objective state.
+  - Mission fails if arrest target is killed, escapes with armed support, or a SWAT operator is killed.
 
 ## VS-05 — Enemy AI state upgrade
 - [ ] Add patrol, investigate, and engage states.

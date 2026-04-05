@@ -96,6 +96,10 @@ export class GameState {
     objectives = [];
     /** @type {string} */
     missionTargetId = 'alfred';
+    /** @type {import('eskv/lib/eskv.js').Vec2 | null} */
+    missionTargetLastPos = null;
+    /** @type {boolean} */
+    missionTargetHasMoved = false;
     /** @type {import('eskv/lib/eskv.js').Vec2[]} */
     selectorCells = [];
     selectorIndex = -1;
@@ -145,6 +149,9 @@ export class GameState {
         this.selectorCells = [];
         this.selectorIndex = -1;
         this.initializeObjectives();
+        const target = this.getMissionTarget();
+        this.missionTargetLastPos = target ? target.gpos.add([0, 0]) : null;
+        this.missionTargetHasMoved = false;
         this.missionStatus = 'active';
         this.message = `Mission started (run:${this.runSeed}, mission:${this.missionIndex}, seed:${this.missionSeed})`;
         this.updateMissionOutcome();
@@ -154,6 +161,8 @@ export class GameState {
         this.objectives = [
             { id: 'locateTarget', text: `Locate target ${this.missionTargetId}`, state: 'pending' },
             { id: 'arrestTarget', text: `Arrest target ${this.missionTargetId}`, state: 'pending' },
+            { id: 'preventTargetEscape', text: `Prevent ${this.missionTargetId} from escaping with armed support`, state: 'pending' },
+            { id: 'keepSquadAlive', text: 'Keep every SWAT operator alive', state: 'pending' },
         ];
     }
 
@@ -371,6 +380,12 @@ export class GameState {
         const target = this.getMissionTarget();
         const locateObjective = this.objectives.find((o) => o.id === 'locateTarget');
         const arrestObjective = this.objectives.find((o) => o.id === 'arrestTarget');
+        const escapeObjective = this.objectives.find((o) => o.id === 'preventTargetEscape');
+        const squadObjective = this.objectives.find((o) => o.id === 'keepSquadAlive');
+        if (target && this.missionTargetLastPos && !target.gpos.equals(this.missionTargetLastPos)) {
+            this.missionTargetHasMoved = true;
+        }
+        this.missionTargetLastPos = target ? target.gpos.add([0, 0]) : null;
         if (target && this.getActivePlayer()?.canSee(target, this.missionMap)) {
             if (locateObjective) locateObjective.state = 'complete';
         }
@@ -379,20 +394,46 @@ export class GameState {
             arrestObjective.state = 'complete';
         }
 
-        const allPlayersDead = this.missionMap.playerCharacters.every((pc) => pc.state === 'dead');
+        const aliveGuards = this.missionMap.enemies.filter((enemy) => enemy.id !== this.missionTargetId && enemy.state !== 'dead');
+        const targetEscaped = target
+            ? this.missionTargetHasMoved && this.isAtMapBoundary(target.gpos[0], target.gpos[1]) && aliveGuards.length > 0
+            : false;
+        const anyPlayerDead = this.missionMap.playerCharacters.some((pc) => pc.state === 'dead');
         if (target?.state === 'dead' && !targetArrested) {
             if (arrestObjective) arrestObjective.state = 'failed';
+            if (escapeObjective && escapeObjective.state !== 'failed') escapeObjective.state = 'pending';
+            if (squadObjective) squadObjective.state = anyPlayerDead ? 'failed' : 'pending';
             this.missionStatus = 'failure';
             this.message = `Mission failure: ${this.missionTargetId} was killed.`;
-        } else if (allPlayersDead) {
+        } else if (targetEscaped) {
+            if (escapeObjective) escapeObjective.state = 'failed';
+            if (squadObjective && squadObjective.state !== 'failed') squadObjective.state = 'pending';
             this.missionStatus = 'failure';
-            this.message = 'Mission failure: all operators down.';
+            this.message = `Mission failure: ${this.missionTargetId} escaped with armed guard support.`;
+        } else if (anyPlayerDead) {
+            if (squadObjective) squadObjective.state = 'failed';
+            if (escapeObjective && escapeObjective.state !== 'failed') escapeObjective.state = 'pending';
+            this.missionStatus = 'failure';
+            this.message = 'Mission failure: a SWAT operator was killed.';
         } else if (this.objectives.every((objective) => objective.state === 'complete')) {
+            if (escapeObjective && escapeObjective.state !== 'failed') escapeObjective.state = 'complete';
+            if (squadObjective && squadObjective.state !== 'failed') squadObjective.state = 'complete';
             this.missionStatus = 'success';
             this.message = `Mission success: ${this.missionTargetId} arrested.`;
         } else if (this.missionStatus === 'notStarted') {
             this.missionStatus = 'active';
         }
+    }
+
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @returns {boolean}
+     */
+    isAtMapBoundary(x, y) {
+        const maxX = this.missionMap.w - 1;
+        const maxY = this.missionMap.h - 1;
+        return x <= 0 || y <= 0 || x >= maxX || y >= maxY;
     }
 
     objectiveSummary() {
