@@ -5,7 +5,7 @@ import {Rect, Vec2} from "eskv/lib/eskv.js";
 import {parse} from "eskv/lib/modules/markup.js";
 import { SpriteWidget } from "eskv/lib/modules/sprites.js";
 import { Character } from "./character.js";
-import { MissionMap } from "./map.js";
+import { LayoutTiles, MetaLayers, MissionMap } from "./map.js";
 
 /**
  * Describes the data interchanged between the action and the AI/GUI handler
@@ -76,6 +76,23 @@ export class Rifle extends ActionItem {
     }
     /**@type {ActionItem['request']} */
     request(actor, map, response) {
+        if (this.mode === 'suppress') {
+            if (response.targetPosition) {
+                const count = this.suppressArea(actor, map, response.targetPosition);
+                return { result: 'complete', message: `Suppressive fire affected ${count} targets` };
+            }
+            /** @type {eskv.Vec2[]} */
+            const validTargetPositions = [];
+            for (const c of map.characters) {
+                if (c !== actor && actor.canSee(c, map)) {
+                    validTargetPositions.push(c.gpos);
+                }
+            }
+            if (validTargetPositions.length === 0) {
+                return { result: 'notAvailable', message: 'No visible area for suppressive fire' };
+            }
+            return { result: 'infoNeeded', message: 'Select suppressive fire area', validTargetPositions };
+        }
         if(response.targetCharacter instanceof Character && response.targetCharacter!==actor) {
             if(this.fire(actor, map, response.targetCharacter)) {
                 return {result:'complete', message:'Target hit'};
@@ -104,15 +121,48 @@ export class Rifle extends ActionItem {
      */
     fire(actor, map, target) {
         this.ammo -= this.mode==='single'?1:5;
-        //TODO: Run a line of sight from the target, then iterate through
-        // misses on closer characters or obstacles may hit targets further back
-        const char = target;
-            const hit = this.mode==='single'?true:map.rng.random()>0.5;
-            if(hit) {
-                char.takeDamage('piercing');
-                return true;
+        target.applySuppression(this.mode === 'burst' ? 1.5 : 1);
+        map.emitSound(actor.gpos, 10, actor.id, 1);
+        const hitChance = this.getHitChance(actor, target, map);
+        const hit = map.rng.random() < hitChance;
+        if(hit) {
+            const damage = this.mode === 'burst' ? 2 : 1;
+            target.takeDamage('piercing', damage);
+            return true;
+        }
+        return false;
+    }
+    /**
+     * @param {Character} actor
+     * @param {Character} target
+     * @param {MissionMap} map
+     */
+    getHitChance(actor, target, map) {
+        const dist = actor.gpos.dist(target.gpos);
+        const coverAtTarget = map.metaTileMap.layer[MetaLayers.cover].get(target.gpos) > 0;
+        const base = this.mode === 'burst' ? 0.66 : 0.78;
+        const distancePenalty = Math.max(0, dist - 4) * 0.06;
+        const coverPenalty = coverAtTarget ? 0.2 : 0;
+        const suppressionPenalty = actor.suppressed ? 0.2 : 0;
+        return Math.max(0.1, Math.min(0.95, base - distancePenalty - coverPenalty - suppressionPenalty));
+    }
+    /**
+     * @param {Character} actor
+     * @param {MissionMap} map
+     * @param {eskv.Vec2} targetPosition
+     */
+    suppressArea(actor, map, targetPosition) {
+        this.ammo -= 8;
+        map.emitSound(actor.gpos, 14, actor.id, 1);
+        let suppressedCount = 0;
+        for (const candidate of map.characters) {
+            if (candidate === actor || candidate.state === 'dead') continue;
+            if (candidate.gpos.dist(targetPosition) <= 4) {
+                candidate.applySuppression(2.5);
+                suppressedCount++;
             }
-            return false;
+        }
+        return suppressedCount;
     }
 }
 
@@ -145,6 +195,74 @@ export class ArrestAction extends ActionItem {
 
 export class Strafe extends ActionItem {
 
+}
+
+export class StealthTakedownAction extends ActionItem {
+    keyControl = 't';
+    constructor() {
+        super();
+        this.label.text = 'Stealth Takedown';
+        this.sprite.frames = [867];
+    }
+    /** @type {ActionItem['request']} */
+    request(actor, map, response) {
+        if (response.targetCharacter instanceof Character && response.targetCharacter !== actor) {
+            if (response.targetCharacter.gpos.dist(actor.gpos) > 1.1) {
+                return { result: 'invalid', message: 'Takedown requires adjacent target' };
+            }
+            const spotted = map.enemies.some((enemy) => {
+                if (enemy === response.targetCharacter || enemy.state === 'dead') return false;
+                return enemy.canSee(actor, map);
+            });
+            if (spotted) {
+                return { result: 'invalid', message: 'Too exposed for a stealth takedown' };
+            }
+            response.targetCharacter.takeDamage('piercing');
+            map.emitSound(actor.gpos, 2, `${actor.id}:silent`, 1);
+            return { result: 'complete', message: `${response.targetCharacter.id} neutralized silently` };
+        }
+        const adjacentTargets = [];
+        for (const candidate of map.enemies) {
+            if (candidate.state === 'dead') continue;
+            if (candidate.gpos.dist(actor.gpos) <= 1.1) {
+                adjacentTargets.push(candidate);
+            }
+        }
+        if (adjacentTargets.length === 0) {
+            return { result: 'notAvailable', message: 'Move adjacent to attempt stealth takedown' };
+        }
+        return { result: 'infoNeeded', message: 'Select takedown target', validTargetCharacters: adjacentTargets };
+    }
+}
+
+export class DecoyAction extends ActionItem {
+    keyControl = 'c';
+    constructor() {
+        super();
+        this.label.text = 'Decoy';
+        this.sprite.frames = [736];
+    }
+    /** @type {ActionItem['request']} */
+    request(actor, map, response) {
+        if (response.targetPosition) {
+            map.emitDecoy(response.targetPosition, 8, actor.id, 2);
+            return { result: 'complete', message: `Decoy deployed at ${response.targetPosition}` };
+        }
+        /** @type {eskv.Vec2[]} */
+        const validTargetPositions = [];
+        const layout = map.metaTileMap.layer[MetaLayers.layout];
+        for (const pos of layout.iterAll()) {
+            const tile = layout.get(pos);
+            if (tile !== LayoutTiles.floor && tile !== LayoutTiles.hallway) continue;
+            if (pos.dist(actor.gpos) <= 6) {
+                validTargetPositions.push(pos);
+            }
+        }
+        if (validTargetPositions.length === 0) {
+            return { result: 'notAvailable', message: 'No valid decoy position in range' };
+        }
+        return { result: 'infoNeeded', message: 'Select decoy position', validTargetPositions };
+    }
 }
 
 

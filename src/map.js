@@ -820,6 +820,10 @@ export class MissionMap extends eskv.Widget {
         new PlayerCharacter({id:'randy', x:0,y:0, activeCharacter:true}),
         new PlayerCharacter({id:'maria', activeCharacter:false})
     ];
+    /** @type {{position: Vec2, radius: number, ttl: number, source: string}[]} */
+    soundEvents = [];
+    /** @type {{position: Vec2, radius: number, ttl: number, source: string}[]} */
+    decoyEvents = [];
     characters = [...this.enemies, ...this.playerCharacters]
     /**@type {Character|null} */
     activeCharacter = this.playerCharacters[0];
@@ -838,6 +842,8 @@ export class MissionMap extends eskv.Widget {
     setupLevel(seed) {
         this.rng.seed(seed);
         this.entities.children = [];
+        this.soundEvents = [];
+        this.decoyEvents = [];
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this, this.rng);
         this.playerCharacters[1].setupForLevelStart(this, this.rng);
@@ -932,6 +938,26 @@ export class MissionMap extends eskv.Widget {
             if(c.gpos.equals(position)) return c;
         }
         return null;
+    }
+
+    /**
+     * @param {Vec2} position
+     * @param {number} radius
+     * @param {string} source
+     * @param {number=} ttl
+     */
+    emitSound(position, radius, source, ttl = 1) {
+        this.soundEvents.push({ position: position.add([0, 0]), radius, ttl, source });
+    }
+
+    /**
+     * @param {Vec2} position
+     * @param {number} radius
+     * @param {string} source
+     * @param {number=} ttl
+     */
+    emitDecoy(position, radius, source, ttl = 2) {
+        this.decoyEvents.push({ position: position.add([0, 0]), radius, ttl, source });
     }
 
 

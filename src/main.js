@@ -50,6 +50,21 @@ Game:
                     id: 'timelineLabel'
                     text: 'turn:1 tick:0 live'
                     align: 'left'
+            BoxLayout:
+                hints: {h:'1'}
+                orientation: 'horizontal'
+                Label:
+                    id: 'squadStatusLabel'
+                    text: 'Squad: -'
+                    align: 'left'
+                Label:
+                    id: 'enemyStatusLabel'
+                    text: 'Enemies: -'
+                    align: 'left'
+                Label:
+                    id: 'signalStatusLabel'
+                    text: 'Signals: sound:0 decoy:0'
+                    align: 'left'
                 Button: 
                     text: 'Help'
                     hints: {w: '3'}
@@ -144,7 +159,7 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
-                    'Use W/A/S/D to move, space to pause, f to fire, g to arrest, [ and ] to rewind/fast-forward to timeline edges, o to start obligation loop.',
+                    'Use W/A/S/D to move, space to pause, f to fire, g to arrest, t for stealth takedown, c for decoy, [ and ] to rewind/fast-forward to timeline edges, o to start obligation loop.',
                     'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
@@ -258,6 +273,12 @@ class Game extends eskv.App {
         seedLabel.text = `run:${view.runSeed} mission:${view.missionIndex} seed:${view.missionSeed}`;
         const timelineLabel = /**@type {eskv.Label}*/(this.findById('timelineLabel'));
         timelineLabel.text = `turn:${view.timelineTurn} tick:${view.timelineTick} ${view.replayMode ? 'replay' : 'live'}`;
+        const squadStatusLabel = /**@type {eskv.Label}*/(this.findById('squadStatusLabel'));
+        squadStatusLabel.text = `Squad: ${view.squadStatusText}`;
+        const enemyStatusLabel = /**@type {eskv.Label}*/(this.findById('enemyStatusLabel'));
+        enemyStatusLabel.text = `Enemies: ${view.enemyStatusText}`;
+        const signalStatusLabel = /**@type {eskv.Label}*/(this.findById('signalStatusLabel'));
+        signalStatusLabel.text = `Signals: ${view.signalStatusText}`;
         const ps = this.getMissionMap().positionSelector;
         ps.validCells = view.selectorCells;
         ps.activeCell = view.selectorIndex;
@@ -318,6 +339,7 @@ const mmap = /**@type {MissionMap}*/(game.findById('MissionMap'));
 const gameState = game.getGameState();
 gameState.setupLevel();
 mmap.playerCharacters[0].actionInventory = game.findById('firstPlayerInventory');
+mmap.playerCharacters[1].actionInventory = game.findById('secondPlayerInventory');
 game.syncUiWithGameState();
 game.updateCameraFromGameState();
 game.start();
