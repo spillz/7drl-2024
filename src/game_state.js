@@ -3,7 +3,23 @@
 import { Facing, FacingVec } from "./facing.js";
 import { MetaLayers, MissionMap } from "./map.js";
 import { PlayerCharacter } from "./character.js";
-import { Rifle } from "./action.js";
+import { ArrestAction, Rifle } from "./action.js";
+
+/**
+ * @typedef {'notStarted'|'active'|'success'|'failure'} MissionStatus
+ */
+
+/**
+ * @typedef {'pending'|'complete'|'failed'} ObjectiveState
+ */
+
+/**
+ * @typedef {{
+ *   id: string,
+ *   text: string,
+ *   state: ObjectiveState,
+ * }} MissionObjective
+ */
 
 /**
  * @typedef {{
@@ -23,7 +39,23 @@ import { Rifle } from "./action.js";
  *   type: 'cancelSelection',
  * } | {
  *   type: 'debugRevealMap',
+ * } | {
+ *   type: 'rewindToTick',
+ *   tick: number,
+ * } | {
+ *   type: 'startObligationLoop',
  * }} GameIntent
+ */
+
+/**
+ * @typedef {{
+ *   turn: number,
+ *   tick: number,
+ *   actorId: string,
+ *   intent: GameIntent,
+ *   result: 'applied'|'ignored'|'blocked'|'rewind',
+ *   message: string,
+ * }} TimelineEvent
  */
 
 /**
@@ -32,6 +64,14 @@ import { Rifle } from "./action.js";
  *   awaitingSelection: boolean,
  *   selectorCells: import('eskv/lib/eskv.js').Vec2[],
  *   selectorIndex: number,
+ *   objectiveText: string,
+ *   missionStatus: MissionStatus,
+ *   runSeed: number,
+ *   missionSeed: number,
+ *   missionIndex: number,
+ *   timelineTick: number,
+ *   timelineTurn: number,
+ *   replayMode: boolean,
  * }} GameView
  */
 
@@ -44,9 +84,34 @@ export class GameState {
     activePlayerActionData = null;
     /** @type {string} */
     message = 'Welcome to the mansion';
+    /** @type {MissionStatus} */
+    missionStatus = 'notStarted';
+    /** @type {number} */
+    runSeed = 20260405;
+    /** @type {number} */
+    missionIndex = 0;
+    /** @type {number} */
+    missionSeed = 0;
+    /** @type {MissionObjective[]} */
+    objectives = [];
+    /** @type {string} */
+    missionTargetId = 'alfred';
     /** @type {import('eskv/lib/eskv.js').Vec2[]} */
     selectorCells = [];
     selectorIndex = -1;
+
+    /** @type {TimelineEvent[]} */
+    timeline = [];
+    /** @type {number} */
+    timelineTick = 0;
+    /** @type {number} */
+    timelineTurn = 1;
+    /** @type {GameIntent[]} */
+    obligationTimeline = [];
+    /** @type {number} */
+    obligationIndex = 0;
+    /** @type {boolean} */
+    replayMode = false;
 
     /** @param {MissionMap} missionMap */
     constructor(missionMap) {
@@ -54,14 +119,42 @@ export class GameState {
     }
 
     setupLevel() {
-        this.missionMap.setupLevel();
+        this.missionSeed = this.computeMissionSeed(this.runSeed, this.missionIndex);
+        this.setupMissionFromCurrentSeeds();
+        this.timeline = [];
+        this.timelineTick = 0;
+        this.timelineTurn = 1;
+        this.replayMode = false;
+        this.obligationIndex = 0;
+    }
+
+    setupMissionFromCurrentSeeds() {
+        this.missionMap.setupLevel(this.missionSeed);
         const player = this.getActivePlayer();
         if (!player) return;
         if (![...player.actions].some((action) => action instanceof Rifle)) {
             player.addAction(new Rifle());
         }
+        if (![...player.actions].some((action) => action instanceof ArrestAction)) {
+            player.addAction(new ArrestAction());
+        }
         player.updateFoV(this.missionMap);
         this.missionMap.updateCharacterVisibility(true);
+        this.activePlayerAction = null;
+        this.activePlayerActionData = null;
+        this.selectorCells = [];
+        this.selectorIndex = -1;
+        this.initializeObjectives();
+        this.missionStatus = 'active';
+        this.message = `Mission started (run:${this.runSeed}, mission:${this.missionIndex}, seed:${this.missionSeed})`;
+        this.updateMissionOutcome();
+    }
+
+    initializeObjectives() {
+        this.objectives = [
+            { id: 'locateTarget', text: `Locate target ${this.missionTargetId}`, state: 'pending' },
+            { id: 'arrestTarget', text: `Arrest target ${this.missionTargetId}`, state: 'pending' },
+        ];
     }
 
     /** @returns {PlayerCharacter | null} */
@@ -77,8 +170,41 @@ export class GameState {
 
     /** @param {GameIntent} intent */
     dispatchIntent(intent) {
+        if (intent.type === 'rewindToTick') {
+            this.rewindToTick(intent.tick);
+            return;
+        }
+        if (intent.type === 'startObligationLoop') {
+            this.startObligationLoop();
+            return;
+        }
+
+        if (this.missionStatus === 'success' || this.missionStatus === 'failure') {
+            this.message = 'Mission already resolved. Rewind or start next loop.';
+            this.recordTimelineEvent(intent, 'blocked', this.message);
+            return;
+        }
+        if (this.replayMode && !this.intentMatchesObligation(intent)) {
+            this.missionStatus = 'failure';
+            this.message = `Obligation mismatch at step ${this.obligationIndex + 1}.`;
+            this.recordTimelineEvent(intent, 'blocked', this.message);
+            return;
+        }
+
+        const result = this.applyIntent(intent);
+        this.recordTimelineEvent(intent, result ? 'applied' : 'ignored', this.message);
+        if (result && this.replayMode) {
+            this.obligationIndex++;
+        }
+    }
+
+    /**
+     * @param {GameIntent} intent
+     * @param {boolean=} suppressTimeline
+     */
+    applyIntent(intent, suppressTimeline = false) {
         const player = this.getActivePlayer();
-        if (!player) return;
+        if (!player) return false;
 
         let progressedTurn = false;
 
@@ -128,6 +254,11 @@ export class GameState {
         if (progressedTurn) {
             this.resolveTurnProgression(player);
         }
+        this.updateMissionOutcome();
+        if (!suppressTimeline) {
+            this.timelineTick++;
+        }
+        return progressedTurn;
     }
 
     /**
@@ -212,7 +343,136 @@ export class GameState {
             enemy.takeTurn(this.missionMap);
         }
         player.actionsThisTurn = 2;
+        this.timelineTurn++;
         this.missionMap.updateCharacterVisibility(true);
+    }
+
+    /**
+     * @param {number} runSeed
+     * @param {number} missionIndex
+     * @returns {number}
+     */
+    computeMissionSeed(runSeed, missionIndex) {
+        const run = runSeed >>> 0;
+        const index = missionIndex >>> 0;
+        let mixed = (run ^ (index + 0x9e3779b9)) >>> 0;
+        mixed = Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b) >>> 0;
+        mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35) >>> 0;
+        mixed = (mixed ^ (mixed >>> 16)) >>> 0;
+        return mixed;
+    }
+
+    /** @returns {import('./character.js').Character | undefined} */
+    getMissionTarget() {
+        return this.missionMap.enemies.find((enemy) => enemy.id === this.missionTargetId);
+    }
+
+    updateMissionOutcome() {
+        const target = this.getMissionTarget();
+        const locateObjective = this.objectives.find((o) => o.id === 'locateTarget');
+        const arrestObjective = this.objectives.find((o) => o.id === 'arrestTarget');
+        if (target && this.getActivePlayer()?.canSee(target, this.missionMap)) {
+            if (locateObjective) locateObjective.state = 'complete';
+        }
+        const targetArrested = target?.state === 'surrendering';
+        if (targetArrested && arrestObjective) {
+            arrestObjective.state = 'complete';
+        }
+
+        const allPlayersDead = this.missionMap.playerCharacters.every((pc) => pc.state === 'dead');
+        if (target?.state === 'dead' && !targetArrested) {
+            if (arrestObjective) arrestObjective.state = 'failed';
+            this.missionStatus = 'failure';
+            this.message = `Mission failure: ${this.missionTargetId} was killed.`;
+        } else if (allPlayersDead) {
+            this.missionStatus = 'failure';
+            this.message = 'Mission failure: all operators down.';
+        } else if (this.objectives.every((objective) => objective.state === 'complete')) {
+            this.missionStatus = 'success';
+            this.message = `Mission success: ${this.missionTargetId} arrested.`;
+        } else if (this.missionStatus === 'notStarted') {
+            this.missionStatus = 'active';
+        }
+    }
+
+    objectiveSummary() {
+        return this.objectives.map((objective) => {
+            const prefix = objective.state === 'complete' ? '[✓]' : objective.state === 'failed' ? '[✗]' : '[ ]';
+            return `${prefix} ${objective.text}`;
+        }).join(' | ');
+    }
+
+    /**
+     * @param {GameIntent} intent
+     * @returns {boolean}
+     */
+    intentMatchesObligation(intent) {
+        const expected = this.obligationTimeline[this.obligationIndex];
+        if (!expected) return true;
+        return JSON.stringify(expected) === JSON.stringify(intent);
+    }
+
+    /**
+     * @param {GameIntent} intent
+     * @param {TimelineEvent['result']} result
+     * @param {string} message
+     */
+    recordTimelineEvent(intent, result, message) {
+        const player = this.getActivePlayer();
+        this.timeline.push({
+            turn: this.timelineTurn,
+            tick: this.timelineTick,
+            actorId: player?.id ?? 'none',
+            intent,
+            result,
+            message,
+        });
+    }
+
+    serializeTimeline() {
+        return JSON.stringify(this.timeline);
+    }
+
+    /** @param {string} serialized */
+    deserializeTimeline(serialized) {
+        /** @type {TimelineEvent[]} */
+        const parsed = JSON.parse(serialized);
+        this.timeline = parsed;
+        this.timelineTick = this.timeline.length > 0 ? this.timeline[this.timeline.length - 1].tick : 0;
+    }
+
+    /** @param {number} tick */
+    rewindToTick(tick) {
+        const clamped = Math.max(0, tick);
+        const intentsToApply = this.timeline
+            .filter((event) => event.result === 'applied' && event.tick <= clamped)
+            .map((event) => event.intent);
+        this.setupMissionFromCurrentSeeds();
+        this.missionStatus = 'active';
+        this.timelineTurn = 1;
+        this.timelineTick = 0;
+        this.timeline = [];
+        for (const intent of intentsToApply) {
+            this.applyIntent(intent, true);
+            this.timelineTick++;
+            this.recordTimelineEvent(intent, 'rewind', `Reapplied while rewinding to tick ${clamped}`);
+        }
+        this.message = `Rewound to tick ${clamped}.`;
+    }
+
+    startObligationLoop() {
+        this.obligationTimeline = this.timeline
+            .filter((event) => event.result === 'applied')
+            .map((event) => event.intent);
+        this.replayMode = true;
+        this.obligationIndex = 0;
+        this.missionIndex += 1;
+        this.missionSeed = this.computeMissionSeed(this.runSeed, this.missionIndex);
+        this.setupMissionFromCurrentSeeds();
+        this.timeline = [];
+        this.timelineTick = 0;
+        this.timelineTurn = 1;
+        this.message = `Obligation loop started. Match ${this.obligationTimeline.length} recorded intents.`;
     }
 
     /** @returns {GameView} */
@@ -222,6 +482,14 @@ export class GameState {
             awaitingSelection: this.activePlayerAction !== null,
             selectorCells: this.selectorCells,
             selectorIndex: this.selectorIndex,
+            objectiveText: this.objectiveSummary(),
+            missionStatus: this.missionStatus,
+            runSeed: this.runSeed,
+            missionSeed: this.missionSeed,
+            missionIndex: this.missionIndex,
+            timelineTick: this.timelineTick,
+            timelineTurn: this.timelineTurn,
+            replayMode: this.replayMode,
         };
     }
 }

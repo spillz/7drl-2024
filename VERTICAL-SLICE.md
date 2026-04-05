@@ -3,36 +3,44 @@
 This document defines the initial vertical slice implementation backlog and acceptance criteria.
 
 ## VS-00 — Define the vertical slice “done” criteria
-- [ ] Write and lock scope for one complete mission loop (start, objective flow, fail/success).
-- [ ] Ensure objective and fail conditions are visible in HUD.
+- [x] Write and lock scope for one complete mission loop (start, objective flow, fail/success).
+- [x] Ensure objective and fail conditions are visible in HUD.
 - **Acceptance criteria:**
   - Mission can be started, won, and failed in one play session.
   - Objective state transitions are visible to player.
 
+### VS-00 Locked scope (implemented)
+One complete mission loop for the vertical slice is now locked to:
+1. **Start:** Mission begins immediately after map generation and actor placement.
+2. **Objective flow:** Primary objective is **eliminate all hostiles**; HUD shows remaining hostiles.
+3. **Success:** Mission resolves to success when all enemies are in `dead` state.
+4. **Failure:** Mission resolves to failure when all player operators are in `dead` state.
+5. **Resolved state behavior:** Once success/failure is reached, new intents are ignored and HUD reflects final state.
+
 ## VS-01 — Deterministic seed ownership
-- [ ] Store `runSeed`, `missionSeed`, and `missionIndex` in authoritative game state.
-- [ ] Seed map generation and expose seed values in HUD/debug output.
+- [x] Store `runSeed`, `missionSeed`, and `missionIndex` in authoritative game state.
+- [x] Seed map generation and expose seed values in HUD/debug output.
 - **Acceptance criteria:**
   - Same run seed + mission index reproduces same mission seed.
   - Same mission seed reproduces same initial mission state.
 
 ## VS-02 — Timeline recorder
-- [ ] Record authoritative gameplay events from intent dispatch.
-- [ ] Serialize/deserialize timeline event logs.
+- [x] Record authoritative gameplay events from intent dispatch.
+- [x] Serialize/deserialize timeline event logs.
 - **Acceptance criteria:**
   - Events include turn/tick, actor, intent, and result.
   - Recorder captures all state-mutating intents.
 
 ## VS-03 — Timeline replay mode
-- [ ] Replay a previous loop while player controls a different operator.
-- [ ] Add drift detection for replay mismatches.
+- [x] Replay a previous loop while player controls a different operator.
+- [x] Add drift detection for replay mismatches.
 - **Acceptance criteria:**
   - Replay runs without user input.
   - Replay mismatch emits a clear first-failure event.
 
 ## VS-04 — Objective system v1
-- [ ] Implement one objective type end-to-end.
-- [ ] Hook objective success/failure to mission success/failure.
+- [x] Implement one objective type end-to-end.
+- [x] Hook objective success/failure to mission success/failure.
 - **Acceptance criteria:**
   - Objective transitions: active -> complete/failed.
   - Mission result reflects objective state.

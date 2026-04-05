@@ -31,8 +31,24 @@ Game:
                 FPS:
                     align:'left'
                 Label:
+                    id: 'missionStatusLabel'
+                    text: 'Mission: not started'
+                    align: 'left'
+                Label:
                     id: 'messageLabel'
                     text: 'Welcome to the mansion'
+                    align: 'left'
+                Label:
+                    id: 'objectiveLabel'
+                    text: 'Objective: Eliminate all hostiles.'
+                    align: 'left'
+                Label:
+                    id: 'seedLabel'
+                    text: 'run:0 mission:0 seed:0'
+                    align: 'left'
+                Label:
+                    id: 'timelineLabel'
+                    text: 'turn:1 tick:0 live'
                     align: 'left'
                 Button: 
                     text: 'Help'
@@ -128,7 +144,7 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
-                    'Use W/A/S/D to move, space to pause, 1-4 to use items.',
+                    'Use W/A/S/D to move, space to pause, f to fire, g to arrest, [ and ] to rewind/fast-forward to timeline edges, o to start obligation loop.',
                     'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
@@ -234,6 +250,14 @@ class Game extends eskv.App {
         const view = state.getView();
         const messageLabel = /**@type {eskv.Label}*/(this.findById('messageLabel'));
         messageLabel.text = view.message;
+        const objectiveLabel = /**@type {eskv.Label}*/(this.findById('objectiveLabel'));
+        objectiveLabel.text = view.objectiveText;
+        const missionStatusLabel = /**@type {eskv.Label}*/(this.findById('missionStatusLabel'));
+        missionStatusLabel.text = `Mission: ${view.missionStatus}`;
+        const seedLabel = /**@type {eskv.Label}*/(this.findById('seedLabel'));
+        seedLabel.text = `run:${view.runSeed} mission:${view.missionIndex} seed:${view.missionSeed}`;
+        const timelineLabel = /**@type {eskv.Label}*/(this.findById('timelineLabel'));
+        timelineLabel.text = `turn:${view.timelineTurn} tick:${view.timelineTick} ${view.replayMode ? 'replay' : 'live'}`;
         const ps = this.getMissionMap().positionSelector;
         ps.validCells = view.selectorCells;
         ps.activeCell = view.selectorIndex;
@@ -271,6 +295,9 @@ class Game extends eskv.App {
             else if (key==='d') state.dispatchIntent({type:'move', direction: Facing.east});
             else if (key===' ') state.dispatchIntent({type:'rest'});
             else if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
+            else if (key==='[') state.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
+            else if (key===']') state.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
+            else if (key==='o') state.dispatchIntent({type:'startObligationLoop'});
             else state.dispatchIntent({type:'startActionFromKey', key});
         }
         this.syncUiWithGameState();
