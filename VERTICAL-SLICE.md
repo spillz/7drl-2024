@@ -55,15 +55,15 @@ One complete mission loop for the vertical slice is now locked to:
   - State transitions are reproducible under fixed seed.
 
 ## VS-06 — Perception model v1
-- [ ] Add LOS + sound-triggered memory of last-known player position.
-- [ ] Expire/refresh memory deterministically.
+- [x] Add LOS + sound-triggered memory of last-known player position.
+- [x] Expire/refresh memory deterministically.
 - **Acceptance criteria:**
   - Enemy can investigate last-known position after LOS break.
   - Sound events can redirect investigate behavior.
 
 ## VS-07 — Action set v1 completion
-- [ ] Complete 2–3 core tactical actions with the full selection flow.
-- [ ] Ensure action AP costs and outcomes are deterministic.
+- [x] Complete 2–3 core tactical actions with the full selection flow.
+- [x] Ensure action AP costs and outcomes are deterministic.
 - **Acceptance criteria:**
   - Actions support request -> infoNeeded -> confirm/cancel -> resolve.
   - Cancel returns cleanly to idle input state.
