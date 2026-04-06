@@ -9,12 +9,12 @@ This document defines the initial vertical slice implementation backlog and acce
   - Mission can be started, won, and failed in one play session.
   - Objective state transitions are visible to player.
 
-### VS-00 Locked scope (implemented)
+### VS-00 Locked scope (implemented, revised to match current code)
 One complete mission loop for the vertical slice is now locked to:
 1. **Start:** Mission begins immediately after map generation and actor placement.
-2. **Objective flow:** Primary objective is **eliminate all hostiles**; HUD shows remaining hostiles.
-3. **Success:** Mission resolves to success when all enemies are in `dead` state.
-4. **Failure:** Mission resolves to failure when all player operators are in `dead` state.
+2. **Objective flow:** Objectives are **locate target**, **arrest target**, **prevent target escape with armed support**, and **keep SWAT alive**; HUD shows objective transitions.
+3. **Success:** Mission resolves to success when all objectives are complete (target arrested, no disqualifying fail-state).
+4. **Failure:** Mission resolves to failure if the arrest target is killed, escapes with armed support, or any SWAT operator is killed.
 5. **Resolved state behavior:** Once success/failure is reached, new intents are ignored and HUD reflects final state.
 
 ## VS-01 — Deterministic seed ownership
@@ -32,11 +32,12 @@ One complete mission loop for the vertical slice is now locked to:
   - Recorder captures all state-mutating intents.
 
 ## VS-03 — Timeline replay mode
-- [x] Replay a previous loop while player controls a different operator.
+- [ ] Replay a previous loop while player controls a different operator.
 - [x] Add drift detection for replay mismatches.
 - **Acceptance criteria:**
   - Replay runs without user input.
   - Replay mismatch emits a clear first-failure event.
+  - Operator control can be intentionally switched for the replay loop.
 
 ## VS-04 — Objective system v1
 - [x] Implement one objective type end-to-end.
@@ -48,8 +49,8 @@ One complete mission loop for the vertical slice is now locked to:
   - Mission fails if arrest target is killed, escapes with armed support, or a SWAT operator is killed.
 
 ## VS-05 — Enemy AI state upgrade
-- [ ] Add patrol, investigate, and engage states.
-- [ ] Add deterministic state transitions from perception events.
+- [x] Add patrol, investigate, and engage states.
+- [x] Add deterministic state transitions from perception events.
 - **Acceptance criteria:**
   - Enemy patrols by default and reacts to detection.
   - State transitions are reproducible under fixed seed.
@@ -69,8 +70,8 @@ One complete mission loop for the vertical slice is now locked to:
   - Cancel returns cleanly to idle input state.
 
 ## VS-08 — HUD timeline/status bindings
-- [ ] Show turn/tick, replay state, objective state, and seed metadata in HUD.
-- [ ] Keep UI reactive to read-only game view/state.
+- [x] Show turn/tick, replay state, objective state, and seed metadata in HUD.
+- [x] Keep UI reactive to read-only game view/state.
 - **Acceptance criteria:**
   - HUD updates after every relevant state change.
   - Replay vs live mode is always visible.
@@ -89,4 +90,11 @@ One complete mission loop for the vertical slice is now locked to:
   - Slice is consistently completable and testable.
   - Includes at least one replay-dependent challenge.
 
--
+## Current implementation snapshot (2026-04-06)
+
+Completed: VS-00 (revised objective wording), VS-01, VS-02, VS-04, VS-05, VS-06, VS-07, VS-08.
+
+Remaining:
+- VS-03: add explicit replay-loop operator switching.
+- VS-09: determinism regression harness (fixed-seed script + state/timeline hash baseline + CI/dev integration).
+- VS-10: mission readability/pacing/challenge polish and first-time-player clarity validation.
