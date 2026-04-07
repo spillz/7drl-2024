@@ -36,8 +36,8 @@ export class ActionItem extends eskv.BoxLayout {
     constructor(props={}) {
         super();
         this.hints = {h:'5'};
-        this.sprite = new SpriteWidget({spriteSheet:eskv.App.resources['sprites']});
-        this.label = new eskv.Label({hints:{h:'1'}});
+        this.sprite = SpriteWidget.a({spriteSheet:eskv.App.resources['sprites']});
+        this.label = eskv.Label.a({hints:{h:'1'}});
         this.children = [
             this.sprite,
             this.label,
@@ -122,11 +122,18 @@ export class Rifle extends ActionItem {
     fire(actor, map, target) {
         this.ammo -= this.mode==='single'?1:5;
         target.applySuppression(this.mode === 'burst' ? 1.5 : 1);
-        map.emitSound(actor.gpos, 10, actor.id, 1);
+        map.emitGunfire(actor.gpos, actor.id, false, 1);
         const hitChance = this.getHitChance(actor, target, map);
-        const hit = map.rng.random() < hitChance;
+        const hit = map.sampleRuntimeRandom(`player:${actor.id}:rifle:${this.mode}`) < hitChance;
         if(hit) {
-            const damage = this.mode === 'burst' ? 2 : 1;
+            const dist = actor.gpos.dist(target.gpos);
+            const unarmored = target.armorRating <= 0.01;
+            let damage = this.mode === 'burst'
+                ? (dist <= 6 ? 3 : 2)
+                : (dist <= 10 ? 3 : 2);
+            if (unarmored && dist <= 8) {
+                damage += 1;
+            }
             target.takeDamage('piercing', damage);
             return true;
         }
@@ -140,11 +147,19 @@ export class Rifle extends ActionItem {
     getHitChance(actor, target, map) {
         const dist = actor.gpos.dist(target.gpos);
         const coverAtTarget = map.metaTileMap.layer[MetaLayers.cover].get(target.gpos) > 0;
-        const base = this.mode === 'burst' ? 0.66 : 0.78;
-        const distancePenalty = Math.max(0, dist - 4) * 0.06;
-        const coverPenalty = coverAtTarget ? 0.2 : 0;
-        const suppressionPenalty = actor.suppressed ? 0.2 : 0;
-        return Math.max(0.1, Math.min(0.95, base - distancePenalty - coverPenalty - suppressionPenalty));
+        const precisionMode = this.mode === 'single';
+        const base = this.mode === 'burst' ? 0.9 : 0.96;
+        const effectiveRange = precisionMode ? 22 : 10;
+        const distancePenalty = Math.max(0, dist - effectiveRange) * (precisionMode ? 0.03 : 0.06);
+        const closeBonus = dist <= 7 ? 0.03 : 0;
+        const coverPenalty = coverAtTarget ? 0.34 : 0;
+        const suppressionPenalty = actor.suppressed ? 0.16 : 0;
+        const armorEvasionPenalty = target.armorRating >= 0.7 ? 0.08 : 0;
+        const trainedEvasionPenalty = target.trainingLevel >= 1 ? 0.04 : 0;
+        const untrainedBonus = target.trainingLevel <= 0 ? 0.04 : 0;
+        const chance = base + closeBonus + untrainedBonus
+            - distancePenalty - coverPenalty - suppressionPenalty - armorEvasionPenalty - trainedEvasionPenalty;
+        return Math.max(0.08, Math.min(0.99, chance));
     }
     /**
      * @param {Character} actor
@@ -153,7 +168,7 @@ export class Rifle extends ActionItem {
      */
     suppressArea(actor, map, targetPosition) {
         this.ammo -= 8;
-        map.emitSound(actor.gpos, 14, actor.id, 1);
+        map.emitGunfire(actor.gpos, actor.id, false, 1);
         let suppressedCount = 0;
         for (const candidate of map.characters) {
             if (candidate === actor || candidate.state === 'dead') continue;
@@ -217,9 +232,8 @@ export class StealthTakedownAction extends ActionItem {
             if (spotted) {
                 return { result: 'invalid', message: 'Too exposed for a stealth takedown' };
             }
-            response.targetCharacter.takeDamage('piercing');
-            map.emitSound(actor.gpos, 2, `${actor.id}:silent`, 1);
-            return { result: 'complete', message: `${response.targetCharacter.id} neutralized silently` };
+            response.targetCharacter.state = 'unconscious';
+            return { result: 'complete', message: `${response.targetCharacter.id} taken down (arrest still required)` };
         }
         const adjacentTargets = [];
         for (const candidate of map.enemies) {

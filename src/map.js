@@ -593,7 +593,7 @@ function generateMansionMap(map, rng) {
     const windows = /**@type {Vec2[]}*/([]);
     for(let room of rooms) placeRoomOpenings(mmap, room, doorways, windows, rng);
     for(let [doorPos, doorFacing] of doorways) {
-        const door = new DoorWidget();
+        const door = DoorWidget.a();
         door.pos = doorPos;
         door.w = 1;
         door.h = 1;
@@ -753,7 +753,7 @@ export class PositionSelector extends eskv.Widget {
         const children = [];
         let i = 0;
         for(let pos of this._validCells) {
-            children.push(new SpriteWidget({
+            children.push(SpriteWidget.a({
                 spriteSheet: eskv.App.resources['sprites'],
                 x: pos[0],
                 y: pos[1],
@@ -802,37 +802,435 @@ export class PositionSelector extends eskv.Widget {
     }
 }
 
+export class ObligationMapOverlay extends eskv.Widget {
+    replayMode = false;
+    /** @type {Vec2|null} */
+    randyEchoPos = null;
+    /** @type {{turn:number, position: Vec2}[]} */
+    randyPath = [];
+    /** @type {{turn:number, position: Vec2, label:string}[]} */
+    objectivePositions = [];
+    constructor(props={}) {
+        super();
+        if (props) this.updateProperties(props);
+    }
+    update(app, millis) {
+        super.update(app, millis);
+        const map = this.parent;
+        if (!(map instanceof eskv.Widget)) return;
+        this.x = 0;
+        this.y = 0;
+        this.w = map.w;
+        this.h = map.h;
+    }
+    /**
+     * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
+     * @param {Vec2} pos
+     * @param {string} color
+     * @param {string} label
+     * @param {number=} radius
+     */
+    drawMarker(ctx, pos, color, label, radius = 0.23) {
+        const cx = pos[0] + 0.5;
+        const cy = pos[1] + 0.5;
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        const oldFont = ctx.font;
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.lineWidth = 0.07;
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = '0.4px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fillText(label, cx + 0.32, cy - 0.32);
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+        ctx.font = oldFont;
+    }
+    draw(app, ctx) {
+        if (!this.replayMode) return;
+        for (const step of this.randyPath) {
+            this.drawMarker(ctx, step.position, 'rgba(60,120,255,0.58)', `R${step.turn}`, 0.13);
+        }
+        if (this.randyEchoPos) {
+            this.drawMarker(ctx, this.randyEchoPos, 'rgba(50,170,255,0.85)', 'R');
+        }
+        for (const objective of this.objectivePositions) {
+            this.drawMarker(ctx, objective.position, 'rgba(255,165,0,0.86)', objective.label ?? `T${objective.turn}`, 0.18);
+        }
+    }
+}
+
+export class TimelineBarOverlay extends eskv.Widget {
+    replayMode = false;
+    timelineTurn = 1;
+    /** @type {number[]} */
+    obligationTurns = [];
+    constructor(props={}) {
+        super();
+        if (props) this.updateProperties(props);
+    }
+    update(app, millis) {
+        super.update(app, millis);
+        const map = this.parent;
+        const scroller = map?.parent;
+        if (!(scroller instanceof eskv.ScrollView)) return;
+        const viewportW = Math.max(2, Math.ceil(scroller.w / scroller.zoom));
+        const viewportH = Math.max(2, Math.ceil(scroller.h / scroller.zoom));
+        const barH = 1.35;
+        this.x = Math.floor(scroller._scrollX);
+        this.y = Math.floor(scroller._scrollY + viewportH - barH);
+        this.w = viewportW;
+        this.h = barH;
+    }
+    /**
+     * @param {number} turn
+     * @param {number} left
+     * @param {number} right
+     * @param {number} maxTurn
+     */
+    turnToX(turn, left, right, maxTurn) {
+        if (maxTurn <= 1) return left;
+        const clampedTurn = Math.max(1, Math.min(maxTurn, turn));
+        return left + (right - left) * ((clampedTurn - 1) / (maxTurn - 1));
+    }
+    draw(app, ctx) {
+        if (!this.replayMode) return;
+        const left = this.x + 0.35;
+        const right = this.x + Math.max(0.35, this.w - 0.35);
+        const top = this.y + 0.1;
+        const baseline = this.y + this.h * 0.72;
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        const oldFont = ctx.font;
+
+        ctx.fillStyle = 'rgba(20,20,30,0.78)';
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 0.04;
+        ctx.strokeRect(this.x, this.y, this.w, this.h);
+
+        const turns = [...new Set(this.obligationTurns.filter((turn) => Number.isFinite(turn) && turn > 0))]
+            .map((turn) => Math.floor(turn))
+            .sort((a, b) => a - b);
+        const maxTurn = Math.max(1, this.timelineTurn, ...turns);
+
+        ctx.beginPath();
+        ctx.moveTo(left, baseline);
+        ctx.lineTo(right, baseline);
+        ctx.strokeStyle = 'rgba(210,210,220,0.55)';
+        ctx.lineWidth = 0.06;
+        ctx.stroke();
+
+        ctx.font = '0.34px monospace';
+        for (const turn of turns) {
+            const tx = this.turnToX(turn, left, right, maxTurn);
+            ctx.beginPath();
+            ctx.moveTo(tx, baseline - 0.24);
+            ctx.lineTo(tx, baseline + 0.2);
+            ctx.strokeStyle = 'rgba(255,165,0,0.95)';
+            ctx.lineWidth = 0.06;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,185,80,0.98)';
+            ctx.fillText(`O${turn}`, tx - 0.24, top + 0.35);
+        }
+
+        const currentX = this.turnToX(this.timelineTurn, left, right, maxTurn);
+        ctx.beginPath();
+        ctx.moveTo(currentX, baseline - 0.3);
+        ctx.lineTo(currentX, baseline + 0.24);
+        ctx.strokeStyle = 'rgba(70,220,255,0.98)';
+        ctx.lineWidth = 0.08;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(180,245,255,0.98)';
+        ctx.fillText(`T${this.timelineTurn}`, currentX - 0.26, top + 0.05);
+
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+        ctx.font = oldFont;
+    }
+}
+
+export class AttackMapOverlay extends eskv.Widget {
+    /** @type {{from: Vec2, to: Vec2, hit: boolean, attackerId: string, targetId: string, ttl: number}[]} */
+    attackEvents = [];
+    constructor(props={}) {
+        super();
+        if (props) this.updateProperties(props);
+    }
+    update(app, millis) {
+        super.update(app, millis);
+        const map = this.parent;
+        if (!(map instanceof eskv.Widget)) return;
+        this.x = 0;
+        this.y = 0;
+        this.w = map.w;
+        this.h = map.h;
+    }
+    /**
+     * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
+     * @param {Vec2} pos
+     * @param {string} color
+     * @param {string} label
+     */
+    drawPoint(ctx, pos, color, label) {
+        const cx = pos[0] + 0.5;
+        const cy = pos[1] + 0.5;
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldFont = ctx.font;
+        const oldLineWidth = ctx.lineWidth;
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.lineWidth = 0.07;
+        ctx.arc(cx, cy, 0.18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = '0.34px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fillText(label, cx + 0.2, cy - 0.22);
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.font = oldFont;
+        ctx.lineWidth = oldLineWidth;
+    }
+    draw(app, ctx) {
+        if (this.attackEvents.length === 0) return;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        for (const attack of this.attackEvents) {
+            const ax = attack.from[0] + 0.5;
+            const ay = attack.from[1] + 0.5;
+            const tx = attack.to[0] + 0.5;
+            const ty = attack.to[1] + 0.5;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(tx, ty);
+            ctx.strokeStyle = attack.hit ? 'rgba(255,80,80,0.95)' : 'rgba(255,220,120,0.86)';
+            ctx.lineWidth = 0.06;
+            ctx.stroke();
+            this.drawPoint(ctx, attack.from, 'rgba(255,90,90,0.9)', attack.hit ? 'FIRE!' : 'SHOT');
+            this.drawPoint(ctx, attack.to, attack.hit ? 'rgba(255,50,50,0.92)' : 'rgba(255,205,110,0.9)', attack.hit ? 'HIT' : 'MISS');
+        }
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+    }
+}
+
+export class IntentGlyphOverlay extends eskv.Widget {
+    /** @type {{id:string, position: Vec2, kind: 'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[]} */
+    enemyIntents = [];
+    constructor(props={}) {
+        super();
+        if (props) this.updateProperties(props);
+    }
+    update(app, millis) {
+        super.update(app, millis);
+        const map = this.parent;
+        if (!(map instanceof eskv.Widget)) return;
+        this.x = 0;
+        this.y = 0;
+        this.w = map.w;
+        this.h = map.h;
+    }
+    /**
+     * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
+     * @param {number} cx
+     * @param {number} cy
+     * @param {'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead'} kind
+     * @param {string} color
+     */
+    drawSymbol(ctx, cx, cy, kind, color) {
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 0.06;
+        if (kind === 'attack') {
+            ctx.beginPath();
+            ctx.arc(cx, cy, 0.16, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.24, cy);
+            ctx.lineTo(cx - 0.1, cy);
+            ctx.moveTo(cx + 0.1, cy);
+            ctx.lineTo(cx + 0.24, cy);
+            ctx.moveTo(cx, cy - 0.24);
+            ctx.lineTo(cx, cy - 0.1);
+            ctx.moveTo(cx, cy + 0.1);
+            ctx.lineTo(cx, cy + 0.24);
+            ctx.stroke();
+        } else if (kind === 'advance') {
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.2, cy - 0.14);
+            ctx.lineTo(cx - 0.02, cy);
+            ctx.lineTo(cx - 0.2, cy + 0.14);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx + 0.02, cy - 0.14);
+            ctx.lineTo(cx + 0.2, cy);
+            ctx.lineTo(cx + 0.02, cy + 0.14);
+            ctx.stroke();
+        } else if (kind === 'search') {
+            ctx.beginPath();
+            ctx.arc(cx - 0.05, cy - 0.02, 0.12, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx + 0.03, cy + 0.06);
+            ctx.lineTo(cx + 0.2, cy + 0.2);
+            ctx.stroke();
+        } else if (kind === 'patrol') {
+            ctx.beginPath();
+            ctx.arc(cx - 0.12, cy, 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + 0.02, cy - 0.06, 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + 0.16, cy + 0.02, 0.05, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (kind === 'passive') {
+            ctx.beginPath();
+            ctx.arc(cx - 0.06, cy - 0.03, 0.08, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.14, cy + 0.12);
+            ctx.lineTo(cx + 0.14, cy + 0.12);
+            ctx.stroke();
+        } else if (kind === 'flee') {
+            ctx.beginPath();
+            ctx.moveTo(cx + 0.18, cy - 0.14);
+            ctx.lineTo(cx + 0.02, cy);
+            ctx.lineTo(cx + 0.18, cy + 0.14);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.02, cy - 0.14);
+            ctx.lineTo(cx - 0.18, cy);
+            ctx.lineTo(cx - 0.02, cy + 0.14);
+            ctx.stroke();
+        } else if (kind === 'comply') {
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.16, cy + 0.15);
+            ctx.lineTo(cx - 0.06, cy - 0.18);
+            ctx.lineTo(cx + 0.03, cy + 0.02);
+            ctx.lineTo(cx + 0.14, cy - 0.18);
+            ctx.lineTo(cx + 0.2, cy + 0.15);
+            ctx.stroke();
+        } else if (kind === 'arrested') {
+            ctx.beginPath();
+            ctx.arc(cx - 0.1, cy, 0.08, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx + 0.1, cy, 0.08, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.02, cy - 0.05);
+            ctx.lineTo(cx + 0.02, cy + 0.05);
+            ctx.stroke();
+        } else if (kind === 'down') {
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.2, cy - 0.12);
+            ctx.lineTo(cx, cy + 0.16);
+            ctx.lineTo(cx + 0.2, cy - 0.12);
+            ctx.stroke();
+        } else if (kind === 'dead') {
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.18, cy - 0.16);
+            ctx.lineTo(cx + 0.18, cy + 0.16);
+            ctx.moveTo(cx + 0.18, cy - 0.16);
+            ctx.lineTo(cx - 0.18, cy + 0.16);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cx - 0.13, cy + 0.19);
+            ctx.lineTo(cx + 0.13, cy + 0.19);
+            ctx.stroke();
+        }
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+    }
+    draw(app, ctx) {
+        if (this.enemyIntents.length === 0) return;
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        const oldFont = ctx.font;
+        for (const intent of this.enemyIntents) {
+            const x = intent.position[0] + 0.5;
+            const y = intent.position[1] - 0.08;
+            ctx.fillStyle = 'rgba(10,10,15,0.78)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.26)';
+            ctx.lineWidth = 0.05;
+            ctx.fillRect(x - 0.54, y - 0.42, 1.08, 0.4);
+            ctx.strokeRect(x - 0.54, y - 0.42, 1.08, 0.4);
+            this.drawSymbol(ctx, x - 0.26, y - 0.21, intent.kind, intent.color);
+            ctx.font = '0.22px monospace';
+            ctx.fillStyle = 'rgba(235,235,245,0.95)';
+            ctx.fillText(intent.label, x - 0.08, y - 0.12);
+        }
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+        ctx.font = oldFont;
+    }
+}
+
 export class MissionMap extends eskv.Widget {
-    rng = new eskv.rand.PRNG_sfc32(); //.setPRNG('sfc32');
+    rng = new eskv.rand.PRNG_mulberry32(); // PRNG_sfc32 in current ESKV mixes BigInt/number during seed()
+    /** @type {number} */
+    runtimeRandomSeed = 0;
+    /** @type {Map<string, import('eskv/lib/eskv.js').rand.PRNG>} */
+    runtimeRandomStreams = new Map();
     clipRegion = new Rect();
-    tileMap = new LayeredTileMap();
-    metaTileMap = new LayeredTileMap();
+    tileMap = LayeredTileMap.a();
+    metaTileMap = LayeredTileMap.a();
     /**@type {Character[]} */
     enemies = [
-        new Character({id:'alfred'}),
-        new Character({id:'bennie'}),
-        new Character({id:'charlie'}),
-        new Character({id:'devon'}),
+        Character.a({id:'guard1'}),
+        Character.a({id:'guard2'}),
+        Character.a({id:'guard3'}),
+        Character.a({id:'guard4'}),
+        Character.a({id:'guard5'}),
+        Character.a({id:'guard6'}),
+        Character.a({id:'scientist1'}),
+        Character.a({id:'scientist2'}),
+        Character.a({id:'scientist3'}),
+        Character.a({id:'scientist4'}),
     ];
-    entities = new eskv.Widget({hints:{h:1, w:1}});
-    /**@type {Character[]} */
+    entities = eskv.Widget.a({hints:{h:1, w:1}});
+    /**@type {PlayerCharacter[]} */
     playerCharacters = [
-        new PlayerCharacter({id:'randy', x:0,y:0, activeCharacter:true}),
-        new PlayerCharacter({id:'maria', activeCharacter:false})
+        PlayerCharacter.a({id:'randy', x:0,y:0, activeCharacter:true}),
+        PlayerCharacter.a({id:'maria', activeCharacter:false})
     ];
     /** @type {{position: Vec2, radius: number, ttl: number, source: string}[]} */
     soundEvents = [];
     /** @type {{position: Vec2, radius: number, ttl: number, source: string}[]} */
     decoyEvents = [];
+    /** @type {{from: Vec2, to: Vec2, hit: boolean, attackerId: string, targetId: string, ttl: number}[]} */
+    attackEvents = [];
     characters = [...this.enemies, ...this.playerCharacters]
     /**@type {Character|null} */
     activeCharacter = this.playerCharacters[0];
     /**@type {SpriteSheet|null} */
     spriteSheet = null;
+    obligationOverlay = ObligationMapOverlay.a();
+    intentOverlay = IntentGlyphOverlay.a();
+    attackOverlay = AttackMapOverlay.a();
+    timelineOverlay = TimelineBarOverlay.a();
     constructor(props=null) {
         super();
-        this.positionSelector = new PositionSelector()
-        this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters];
+        this.positionSelector = PositionSelector.a()
+        this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters, this.obligationOverlay, this.intentOverlay, this.attackOverlay, this.timelineOverlay];
         // this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
@@ -841,25 +1239,67 @@ export class MissionMap extends eskv.Widget {
      */
     setupLevel(seed) {
         this.rng.seed(seed);
+        this.runtimeRandomSeed = seed >>> 0;
+        this.runtimeRandomStreams.clear();
         this.entities.children = [];
         this.soundEvents = [];
         this.decoyEvents = [];
+        this.attackEvents = [];
         generateMansionMap(this, this.rng);
-        this.playerCharacters[0].setupForLevelStart(this, this.rng);
-        this.playerCharacters[1].setupForLevelStart(this, this.rng);
+        this.playerCharacters[0].setupForLevelStart(this);
+        this.playerCharacters[1].setupForLevelStart(this);
         this.enemies.forEach(e=>e.setupForLevelStart(this, this.rng));
+    }
+
+    /**
+     * @param {string} key
+     * @returns {number}
+     */
+    sampleRuntimeRandom(key) {
+        let stream = this.runtimeRandomStreams.get(key);
+        if (!stream) {
+            let hash = 2166136261 >>> 0;
+            for (let i = 0; i < key.length; i++) {
+                hash ^= key.charCodeAt(i);
+                hash = Math.imul(hash, 16777619) >>> 0;
+            }
+            const mixedSeed = (this.runtimeRandomSeed ^ hash ^ 0x9e3779b9) >>> 0;
+            stream = new eskv.rand.PRNG_mulberry32();
+            stream.seed(mixedSeed);
+            this.runtimeRandomStreams.set(key, stream);
+        }
+        return stream.random();
     }
     on_spriteSheet() {
         this.tileMap.spriteSheet = this.spriteSheet;
         // this.setupLevel();
     }
     on_parent(e,o,v) {
-        const scroller = this.parent;
+        const scroller = v;
         if(!(scroller instanceof eskv.ScrollView)) return;
-        scroller.bind('scrollX', (e,o,v)=>this.updateClipRegion(o));
-        scroller.bind('scrollY', (e,o,v)=>this.updateClipRegion(o));
-        scroller.bind('zoom', (e,o,v)=>this.updateClipRegion(o));
+        scroller.listen('scrollX', ()=>this.updateClipRegion(scroller));
+        scroller.listen('scrollY', ()=>this.updateClipRegion(scroller));
+        scroller.listen('zoom', ()=>this.updateClipRegion(scroller));
         this.updateClipRegion(scroller);
+    }
+    /**
+     * Keep tile clipping synced with scroll view size/position.
+     * Parent attachment can occur before final layout, so a one-time clip calc can be stale.
+     */
+    update(app, millis) {
+        super.update(app, millis);
+        const scroller = this.parent;
+        if(scroller instanceof eskv.ScrollView) {
+            this.updateClipRegion(scroller);
+        }
+        this.attackOverlay.attackEvents = this.attackEvents.map((event) => ({
+            from: eskv.v2(event.from),
+            to: eskv.v2(event.to),
+            hit: event.hit,
+            attackerId: event.attackerId,
+            targetId: event.targetId,
+            ttl: event.ttl,
+        }));
     }
     /**
      * 
@@ -952,12 +1392,85 @@ export class MissionMap extends eskv.Widget {
 
     /**
      * @param {Vec2} position
+     * @param {string} source
+     * @param {boolean=} silenced
+     * @param {number=} ttl
+     */
+    emitGunfire(position, source, silenced = false, ttl = 1) {
+        const radius = silenced ? 5 : Math.max(this.w, this.h) * 2;
+        this.emitSound(position, radius, silenced ? `${source}:silenced` : `${source}:gunfire`, ttl);
+    }
+
+    /**
+     * @param {Vec2} position
      * @param {number} radius
      * @param {string} source
      * @param {number=} ttl
      */
     emitDecoy(position, radius, source, ttl = 2) {
         this.decoyEvents.push({ position: position.add([0, 0]), radius, ttl, source });
+    }
+
+    /**
+     * @param {Vec2} from
+     * @param {Vec2} to
+     * @param {boolean} hit
+     * @param {string} attackerId
+     * @param {string} targetId
+     * @param {number=} ttl
+     */
+    emitAttack(from, to, hit, attackerId, targetId, ttl = 1) {
+        this.attackEvents.push({
+            from: from.add([0, 0]),
+            to: to.add([0, 0]),
+            hit,
+            attackerId,
+            targetId,
+            ttl,
+        });
+    }
+
+    /**
+     * @param {{
+     *   replayMode: boolean,
+     *   timelineTurn: number,
+     *   obligationTurns: number[],
+     *   randyEchoPos: import('eskv/lib/eskv.js').VecLike|null,
+     *   randyPath: {turn:number, position:import('eskv/lib/eskv.js').VecLike}[],
+     *   obligationObjectives: {turn:number, position:import('eskv/lib/eskv.js').VecLike, label:string}[],
+     *   enemyIntents: {id:string, position:import('eskv/lib/eskv.js').VecLike, kind:'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[],
+     * }} value
+     */
+    setObligationOverlayData(value) {
+        this.obligationOverlay.replayMode = value.replayMode;
+        this.obligationOverlay.randyEchoPos = value.randyEchoPos ? eskv.v2(value.randyEchoPos) : null;
+        this.obligationOverlay.randyPath = value.randyPath.map((step) => ({
+            turn: step.turn,
+            position: eskv.v2(step.position),
+        }));
+        this.obligationOverlay.objectivePositions = value.obligationObjectives.map((objective)=>({
+            turn: objective.turn,
+            position: eskv.v2(objective.position),
+            label: objective.label,
+        }));
+        this.timelineOverlay.replayMode = value.replayMode;
+        this.timelineOverlay.timelineTurn = value.timelineTurn;
+        this.timelineOverlay.obligationTurns = value.obligationTurns.slice();
+        this.intentOverlay.enemyIntents = value.enemyIntents.map((intent) => ({
+            id: intent.id,
+            position: eskv.v2(intent.position),
+            kind: intent.kind,
+            label: intent.label,
+            color: intent.color,
+        }));
+        this.attackOverlay.attackEvents = this.attackEvents.map((event) => ({
+            from: eskv.v2(event.from),
+            to: eskv.v2(event.to),
+            hit: event.hit,
+            attackerId: event.attackerId,
+            targetId: event.targetId,
+            ttl: event.ttl,
+        }));
     }
 
 

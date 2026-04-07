@@ -197,6 +197,10 @@ export class Character extends Entity {
     constitution = 1;
     maxHealth = 3;
     health = 3;
+    /** 0 = none, 1+ = armored */
+    armorRating = 0;
+    /** 0 = untrained, 1 = trained guard, 2 = elite/SWAT */
+    trainingLevel = 0;
     /** Lower means harder to suppress, higher means easier */
     suppressibility = 1;
     suppressionLevel = 0;
@@ -229,6 +233,15 @@ export class Character extends Entity {
     _coverPositions = new Set();
     _visibleLayer = new Grid2D();
     activeCharacter = false;
+    isScientist() {
+        return this.id.startsWith('scientist');
+    }
+    isGuard() {
+        return this.id.startsWith('guard');
+    }
+    isSwat() {
+        return this.id === 'randy' || this.id === 'maria';
+    }
     constructor(props={}) {
         super();
         this.spriteSheet = eskv.App.resources['sprites'];
@@ -243,7 +256,7 @@ export class Character extends Entity {
             const children = [];
             for(let a of this.actions) {
                 a.hints = {w:'3', h:'3'};
-                this.actionInventory.addChild(a);
+                children.push(a);
             }
             this.actionInventory.children = children;
         }
@@ -321,10 +334,26 @@ export class Character extends Entity {
         this.patrolRoute = [a, b];
         this.gpos = eskv.v2(b);
         [this.x, this.y] = this.gpos;
-        this.animationGroup = this.id[0]==='d'?characterAnimations.greenShirt:characterAnimations.whiteShirt;
-        this.maxHealth = this.id === 'alfred' ? 4 : 3;
+        const isGuard = this.id.startsWith('guard');
+        const isScientist = this.id.startsWith('scientist');
+        this.animationGroup = isGuard ? characterAnimations.greenShirt : characterAnimations.whiteShirt;
+        if (isScientist) {
+            this.maxHealth = 2;
+            this.armorRating = 0;
+            this.trainingLevel = 0;
+            this.suppressibility = 1.15;
+        } else if (isGuard) {
+            this.maxHealth = 3;
+            this.armorRating = 0.8;
+            this.trainingLevel = 1;
+            this.suppressibility = 0.75;
+        } else {
+            this.maxHealth = 3;
+            this.armorRating = 0.5;
+            this.trainingLevel = 1;
+            this.suppressibility = 0.8;
+        }
         this.health = this.maxHealth;
-        this.suppressibility = this.id === 'alfred' ? 0.45 : 0.75;
         this.suppressionLevel = 0;
         this.suppressed = false;
         this.animationState = 'standing';
@@ -367,7 +396,8 @@ export class Character extends Entity {
             //TODO: Make characters swap if they are stuck in a faceoff
             this.movementBlockedCount++;
         } else {
-            this.pos = eskv.v2(this.gpos); //Cut the old animation and move to where the character was
+            // Preserve current rendered position so chaining turns does not snap to stale logical tile state.
+            this.pos = eskv.v2([this.x, this.y]);
             this.gpos = npos;
             const anim = new eskv.WidgetAnimation();
             anim.add({ x: this.gpos[0], y: this.gpos[1]}, 300);
@@ -384,7 +414,7 @@ export class Character extends Entity {
         }
     }
     on_animationComplete(e, o, v) {
-        if(this.animationState = 'walking') {
+        if(this.animationState === 'walking') {
             this.animationState = 'standing';
         }
     }
@@ -394,11 +424,31 @@ export class Character extends Entity {
      */
     takeDamage(damageType, amount = 1) {
         if(damageType==='piercing') {
-            this.health -= amount;
+            const armorMitigation = Math.min(0.75, this.armorRating * 0.35);
+            const effectiveDamage = Math.max(0, Math.round(amount * (1 - armorMitigation)));
+            if (effectiveDamage <= 0) {
+                return;
+            }
+            this.health -= effectiveDamage;
             if (this.health <= 0) {
                 this.health = 0;
                 this.state = 'dead';
                 this.animationState = 'dead';
+                return;
+            }
+            if (this.trainingLevel <= 0) {
+                const severe = effectiveDamage >= 2 || this.health <= Math.ceil(this.maxHealth * 0.5);
+                if (severe) {
+                    this.state = 'unconscious';
+                    this.actionsThisTurn = 0;
+                    this.movementBlockedCount = Math.max(this.movementBlockedCount, 3);
+                } else {
+                    this.actionsThisTurn = Math.min(this.actionsThisTurn, 1);
+                    this.movementBlockedCount = Math.max(this.movementBlockedCount, 2);
+                }
+            } else if (this.trainingLevel === 1 && effectiveDamage >= 2) {
+                this.actionsThisTurn = Math.min(this.actionsThisTurn, 1);
+                this.movementBlockedCount = Math.max(this.movementBlockedCount, 1);
             }
         }
     }
@@ -528,7 +578,10 @@ export class Character extends Entity {
                 if(route.length>0) {
                     //First action spent moving
                     this.move(facingFromVec(route[0].sub(this.gpos)), mmap);
-                    this.history.push([new ActionItem(),{}]);    
+                    const recordedAction = [...this.actions][0];
+                    if (recordedAction) {
+                        this.history.push([recordedAction,{}]);
+                    }
                 }
                 this.actionsThisTurn--; //Spend second action doing nothing
                 mmap.updateCharacterVisibility(true);
@@ -564,6 +617,8 @@ export class PlayerCharacter extends Character {
         this.movementBlockedCount = 0;
         this.maxHealth = 4;
         this.health = this.maxHealth;
+        this.armorRating = 1.1;
+        this.trainingLevel = 2;
         this.suppressibility = 0.9;
         this.suppressionLevel = 0;
         this.suppressed = false;

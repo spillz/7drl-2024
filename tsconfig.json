@@ -9,6 +9,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "strict": false,
+    "ignoreDeprecations": "6.0",
     "baseUrl": "."
   },
   "include": ["src/**/*.js", "src/**/*.d.ts"]

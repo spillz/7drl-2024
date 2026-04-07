@@ -22,115 +22,124 @@ Game:
         hints: {w:1, h:1}
         id: 'notebook'
         BoxLayout:
-            id: 'game'
+            id: 'gameplayRoot'
             orientation: 'vertical'
             hints: {center_x:0.5, center_y:0.5, w:1, h:1}
             BoxLayout:
-                hints: {h:'1'}
+                id: 'topHeader'
                 orientation: 'horizontal'
+                hints: {w:1, h:'1.1'}
+                bgColor: 'rgb(16,16,24)'
+                paddingX: '0.3'
+                paddingY: '0.2'
                 FPS:
+                    id: 'fpsHeader'
+                    hints: {w:'8'}
                     align:'left'
                 Label:
-                    id: 'missionStatusLabel'
-                    text: 'Mission: not started'
-                    align: 'left'
-                Label:
-                    id: 'messageLabel'
-                    text: 'Welcome to the mansion'
-                    align: 'left'
-                Label:
-                    id: 'objectiveLabel'
-                    text: 'Objectives: Locate and arrest the target. No escapes. No SWAT casualties.'
-                    align: 'left'
-                Label:
-                    id: 'seedLabel'
-                    text: 'run:0 mission:0 seed:0'
-                    align: 'left'
-                Label:
-                    id: 'timelineLabel'
-                    text: 'turn:1 tick:0 live'
+                    id: 'globalHeaderLabel'
+                    hints: {w:1}
+                    text: 'Mission: active | turn:1 tick:0 live'
                     align: 'left'
             BoxLayout:
-                hints: {h:'1'}
                 orientation: 'horizontal'
-                Label:
-                    id: 'squadStatusLabel'
-                    text: 'Squad: -'
-                    align: 'left'
-                Label:
-                    id: 'enemyStatusLabel'
-                    text: 'Enemies: -'
-                    align: 'left'
-                Label:
-                    id: 'signalStatusLabel'
-                    text: 'Signals: sound:0 decoy:0'
-                    align: 'left'
-                Button: 
-                    text: 'Help'
-                    hints: {w: '3'}
-                    on_press:
-                        const help = window.app.findById('help');
-                        help.helpVal = 0;
-                        const nb = window.app.findById('notebook');
-                        nb.activePage = 1;
-                Button: 
-                    text:  \`\${scroller.zoom*100}%\`
-                    hints: {w: '3'}
-                    id: 'zoomButton'
-                    on_press:
-                        const scroller = window.app.findById('scroller');
-                        if(!scroller) return;
-                        const zoom = Math.floor(scroller.zoom + 1);
-                        scroller.zoom = zoom<4? zoom:0.5;
-            BoxLayout:
-                bgColor: 'rgb(35,35,45)'
-                orientation: 'horizontal'
+                id: 'game'
+                hints: {w:1, h:1}
                 BoxLayout:
+                    id: 'leftPanel'
+                    hints: {w:'8', h:1}
                     orientation: 'vertical'
-                    hints: {w:'4'}
-                    id: 'firstPlayer'
+                    bgColor: 'rgb(24,24,32)'
+                    paddingX: '0.4'
+                    paddingY: '0.35'
                     Label:
-                        text:\`Randy \${randy.gpos}\`
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
+                        text: 'Randy'
                         align: 'left'
-                    SpriteWidget:
-                        spriteSheet: resources['sprites']
-                        frames: [354]
-                        hints: {w:'3', h:'3'}
                     BoxLayout:
-                        hints: {h:null}
+                        hints: {h:'2.7'}
+                        orientation: 'horizontal'
+                        SpriteWidget:
+                            id: 'randyPortrait'
+                            spriteSheet: resources['sprites']
+                            frames: [355]
+                            hints: {w:'2.6', h:'2.6'}
+                        Label:
+                            id: 'randyStatusLabel'
+                            text: 'HP: -'
+                            wrap: true
+                            align: 'left'
+                    BoxLayout:
+                        hints: {h:'3.5'}
                         id: 'firstPlayerInventory'
-                    Widget:
-                        id: 'padding2'
-                BoxLayout:
-                    hints: {w:'4', h:null}
-                    padding: '2'
-                    orientation: 'vertical'
-                    id: 'secondPlayer'
-                    Widget:
-                        id: 'padding2'
-                    BoxLayout:
-                        hints: {h:null}
-                        id: 'secondPlayerInventory'
+                        orientation: 'horizontal'
                     Label:
-                        text:\`Maria \${Maria.status}\`
-                        wrap: true;
-                        hints: {h:'1'}
-                        sizeGroup: 'actionItems'
-                        align: 'right'
-                    SpriteWidget:
-                        spriteSheet: resources['sprites']
-                        frames: [450]
-                        hints: {w:'3', h:'3'}
-                ScrollView:
-                    id: 'scroller'
-                    uiZoom: false
-                    hints: {h:'20'}
-                    MissionMap:
-                        id: 'MissionMap'
-                        hints: {w:null, h:null}
-                        spriteSheet: resources['sprites']
+                        text: 'Maria'
+                        align: 'left'
+                    BoxLayout:
+                        hints: {h:'2.7'}
+                        orientation: 'horizontal'
+                        SpriteWidget:
+                            id: 'mariaPortrait'
+                            spriteSheet: resources['sprites']
+                            frames: [451]
+                            hints: {w:'2.6', h:'2.6'}
+                        Label:
+                            id: 'mariaStatusLabel'
+                            text: 'HP: -'
+                            wrap: true
+                            align: 'left'
+                    BoxLayout:
+                        hints: {h:'3.5'}
+                        id: 'secondPlayerInventory'
+                        orientation: 'horizontal'
+                    Label:
+                        id: 'shortcutsLabel'
+                        text: 'Shortcuts: -'
+                        wrap: true
+                        align: 'left'
+                    Label:
+                        text: 'Event Log'
+                        align: 'left'
+                    ScrollView:
+                        id: 'logScroller'
+                        uiZoom: false
+                        hints: {h:null}
+                        Label:
+                            id: 'logLabel'
+                            text: 'No events yet.'
+                            wrap: true
+                            align: 'left'
+                    BoxLayout:
+                        hints: {h:'1.2'}
+                        orientation: 'horizontal'
+                        Button: 
+                            text: 'Help'
+                            hints: {w: '3'}
+                            on_press:
+                                const help = window.app.findById('help');
+                                help.helpVal = 0;
+                                const nb = window.app.findById('notebook');
+                                nb.activePage = 1;
+                        Button: 
+                            text: '100%'
+                            hints: {w: '3'}
+                            id: 'zoomButton'
+                            on_press:
+                                const scroller = window.app.findById('scroller');
+                                if(!scroller) return;
+                                const zoom = Math.floor(scroller.zoom + 1);
+                                scroller.zoom = zoom<4? zoom:0.5;
+                BoxLayout:
+                    bgColor: 'rgb(35,35,45)'
+                    orientation: 'horizontal'
+                    ScrollView:
+                        id: 'scroller'
+                        uiZoom: false
+                        hints: {h:1, w:1}
+                        MissionMap:
+                            id: 'MissionMap'
+                            hints: {w:null, h:null}
+                            spriteSheet: resources['sprites']
         BoxLayout:
             hints: {h:1, w:1}
             h:20
@@ -159,7 +168,7 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
-                    'Use W/A/S/D to move, space to pause, f to fire, g to arrest, t for stealth takedown, c for decoy, [ and ] to rewind/fast-forward to timeline edges, o to start obligation loop.',
+                    'Use W/A/S/D to move, space to pause, F to fire, G to arrest, T for stealth takedown, C for decoy, CTRL+SHIFT+F/G/T/C to queue a free Maria request from Randy, L to toggle full-map vision, [ and ] to rewind/fast-forward timeline, O to start Maria obligation loop.',
                     'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
@@ -221,7 +230,6 @@ class FPS extends eskv.Label {
         this._counter += tref - this._tref;
         this._frames += 1;
         const currentFPS = 1000/(tref-this._tref);
-        console.log("FPS update", tref, tref-this._tref, currentFPS);
         this._tref= tref;
         this._badFrameCount += currentFPS<50?1:0;
         if(currentFPS<this._worst) this._worst = currentFPS;
@@ -240,6 +248,12 @@ class Game extends eskv.App {
     gameState = null;
     constructor(props={}) {
         super();
+        if (this.inputHandler) {
+            // Disable automatic focus cycling from connected gamepads/keyboard tab navigation in this game UI.
+            this.inputHandler.pollGamepads = () => {};
+            this.inputHandler._connectedGamepads.clear();
+            this.inputHandler.clearFocus();
+        }
         Game.resources['sprites'] = new eskv.sprites.SpriteSheet(spriteUrl, 16);
         this.continuousFrameUpdates = true;
         window.focus();
@@ -263,25 +277,40 @@ class Game extends eskv.App {
     syncUiWithGameState() {
         const state = this.getGameState();
         const view = state.getView();
-        const messageLabel = /**@type {eskv.Label}*/(this.findById('messageLabel'));
-        messageLabel.text = view.message;
-        const objectiveLabel = /**@type {eskv.Label}*/(this.findById('objectiveLabel'));
-        objectiveLabel.text = view.objectiveText;
-        const missionStatusLabel = /**@type {eskv.Label}*/(this.findById('missionStatusLabel'));
-        missionStatusLabel.text = `Mission: ${view.missionStatus}`;
-        const seedLabel = /**@type {eskv.Label}*/(this.findById('seedLabel'));
-        seedLabel.text = `run:${view.runSeed} mission:${view.missionIndex} seed:${view.missionSeed}`;
-        const timelineLabel = /**@type {eskv.Label}*/(this.findById('timelineLabel'));
-        timelineLabel.text = `turn:${view.timelineTurn} tick:${view.timelineTick} ${view.replayMode ? 'replay' : 'live'}`;
-        const squadStatusLabel = /**@type {eskv.Label}*/(this.findById('squadStatusLabel'));
-        squadStatusLabel.text = `Squad: ${view.squadStatusText}`;
-        const enemyStatusLabel = /**@type {eskv.Label}*/(this.findById('enemyStatusLabel'));
-        enemyStatusLabel.text = `Enemies: ${view.enemyStatusText}`;
-        const signalStatusLabel = /**@type {eskv.Label}*/(this.findById('signalStatusLabel'));
-        signalStatusLabel.text = `Signals: ${view.signalStatusText}`;
-        const ps = this.getMissionMap().positionSelector;
+        const globalHeaderLabel = /**@type {eskv.Label}*/(this.findById('globalHeaderLabel'));
+        globalHeaderLabel.text = `Mission:${view.missionStatus} | T${view.timelineTurn}#${view.timelineTick} ${view.replayMode ? 'replay' : 'live'} | run:${view.runSeed} m:${view.missionIndex} seed:${view.missionSeed} | ${view.requestSummaryText} | ${view.signalStatusText} | ${view.message}`;
+        const mmap = this.getMissionMap();
+        const randy = mmap.playerCharacters.find((player) => player.id === 'randy') ?? null;
+        const maria = mmap.playerCharacters.find((player) => player.id === 'maria') ?? null;
+        const randyStatusLabel = /**@type {eskv.Label}*/(this.findById('randyStatusLabel'));
+        const mariaStatusLabel = /**@type {eskv.Label}*/(this.findById('mariaStatusLabel'));
+        randyStatusLabel.text = randy
+            ? `HP ${randy.health}/${randy.maxHealth} | AP ${randy.actionsThisTurn} | POS ${randy.gpos[0]},${randy.gpos[1]}${mmap.activeCharacter===randy?' | ACTIVE':''}`
+            : 'Unavailable';
+        mariaStatusLabel.text = maria
+            ? `HP ${maria.health}/${maria.maxHealth} | AP ${maria.actionsThisTurn} | POS ${maria.gpos[0]},${maria.gpos[1]}${mmap.activeCharacter===maria?' | ACTIVE':''}`
+            : 'Unavailable';
+        const shortcutsLabel = /**@type {eskv.Label}*/(this.findById('shortcutsLabel'));
+        shortcutsLabel.text = view.shortcutsText;
+        const logLabel = /**@type {eskv.Label}*/(this.findById('logLabel'));
+        logLabel.text = `${view.objectiveText}\n${view.enemyStatusText}\n${view.logText}`;
+        const zoomButton = /**@type {eskv.Button}*/(this.findById('zoomButton'));
+        const scroller = /**@type {eskv.ScrollView}*/(this.findById('scroller'));
+        if (zoomButton && scroller) {
+            zoomButton.text = `${Math.round(scroller.zoom * 100)}%`;
+        }
+        const ps = mmap.positionSelector;
         ps.validCells = view.selectorCells;
         ps.activeCell = view.selectorIndex;
+        mmap.setObligationOverlayData({
+            replayMode: view.replayMode,
+            timelineTurn: view.timelineTurn,
+            obligationTurns: view.obligationTurns,
+            randyEchoPos: view.randyEchoPos,
+            randyPath: view.randyPath,
+            obligationObjectives: view.obligationObjectives,
+            enemyIntents: view.enemyIntents,
+        });
     }
     updateCameraFromGameState() {
         const camera = /**@type {eskv.ScrollView|null}*/(this.findById('scroller'));
@@ -298,9 +327,18 @@ class Game extends eskv.App {
         camera.scrollY = scrollY;
     }
     on_key_down(e, o, v) {
-        const key = v?.event?.key;
-        if(typeof key!=='string') return;
+        const rawKey = v?.event?.key;
+        if(typeof rawKey!=='string') return;
+        const key = rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
+        const shift = Boolean(v?.event?.shiftKey);
+        const ctrlOrMeta = Boolean(v?.event?.ctrlKey || v?.event?.metaKey);
         const state = this.getGameState();
+        if (key==='l') {
+            state.toggleFullVision();
+            this.syncUiWithGameState();
+            this.updateCameraFromGameState();
+            return;
+        }
         if (state.isAwaitingSelection()) {
             if (key==='w') state.dispatchIntent({type:'moveSelection', direction: Facing.north});
             else if (key==='a') state.dispatchIntent({type:'moveSelection', direction: Facing.west});
@@ -308,17 +346,20 @@ class Game extends eskv.App {
             else if (key==='d') state.dispatchIntent({type:'moveSelection', direction: Facing.east});
             else if (key==='e') state.dispatchIntent({type:'confirmSelection'});
             else if (key==='Escape') state.dispatchIntent({type:'cancelSelection'});
-            else return;
+                else return;
         } else {
-            if (key==='w') state.dispatchIntent({type:'move', direction: Facing.north});
+            const requestable = key==='f' || key==='g' || key==='t' || key==='c';
+            const queueRequest = ctrlOrMeta && shift && requestable;
+            if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
+            else if (key==='[') state.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
+            else if (key===']') state.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
+            else if (key==='o') state.dispatchIntent({type:'startObligationLoop'});
+            else if (queueRequest) state.dispatchIntent({type:'requestActionFromKey', key});
+            else if (key==='w') state.dispatchIntent({type:'move', direction: Facing.north});
             else if (key==='a') state.dispatchIntent({type:'move', direction: Facing.west});
             else if (key==='s') state.dispatchIntent({type:'move', direction: Facing.south});
             else if (key==='d') state.dispatchIntent({type:'move', direction: Facing.east});
             else if (key===' ') state.dispatchIntent({type:'rest'});
-            else if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
-            else if (key==='[') state.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
-            else if (key===']') state.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
-            else if (key==='o') state.dispatchIntent({type:'startObligationLoop'});
             else state.dispatchIntent({type:'startActionFromKey', key});
         }
         this.syncUiWithGameState();
@@ -330,6 +371,10 @@ Game.registerClass('Action', ActionItem, 'Label');
 Game.registerClass('FPS', FPS, 'Label');
 Game.registerClass('Game', Game, 'App');
 Game.registerClass('MissionMap', MissionMap, 'Widget');
+Game.rules.add('Button', { canFocus: false });
+Game.rules.add('BasicButton', { canFocus: false });
+Game.rules.add('ToggleButton', { canFocus: false });
+Game.rules.add('CheckBox', { canFocus: false });
 
 const result = parse(markup);
 

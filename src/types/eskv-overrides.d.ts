@@ -9,6 +9,7 @@ declare module "eskv/lib/eskv.js" {
     scale(s: number): Vec2;
     abs(): Vec2;
     sum(): number;
+    mag(): number;
     dist(v: VecLike): number;
     equals(v: VecLike): boolean;
   }
@@ -52,6 +53,7 @@ declare module "eskv/lib/eskv.js" {
     pos: Vec2;
     hints: Record<string, unknown>;
     constructor(props?: any);
+    static a<T extends Widget>(this: new (props?: any) => T, props?: any): T;
     updateProperties(props: any): void;
     addChild(child: any): void;
     removeChild(child: any): void;
@@ -65,6 +67,10 @@ declare module "eskv/lib/eskv.js" {
   }
 
   export class BoxLayout extends Widget {}
+
+  export class Button extends Widget {
+    text: string;
+  }
 
   export class ScrollView extends Widget {
     scrollX: number;
@@ -81,6 +87,7 @@ declare module "eskv/lib/eskv.js" {
 
   export class App extends Widget {
     static resources: Record<string, unknown>;
+    static rules: { add(name: string, props: any): void };
     static get(): App;
     static registerClass(name: string, klass: any, base: string): void;
     inputHandler: any;
@@ -104,6 +111,7 @@ declare module "eskv/lib/eskv.js" {
     }
 
     class PRNG_sfc32 extends PRNG {}
+    class PRNG_mulberry32 extends PRNG {}
   }
 
   export namespace sprites {
@@ -167,5 +175,6 @@ declare module "eskv/lib/modules/random.js" {
     random(): number;
     getRandomPos(w: number, h: number): [number, number];
     getRandomInt(max: number): number;
+    seed(value: number): void;
   }
 }
