@@ -727,6 +727,8 @@ export class PositionSelector extends eskv.Widget {
     _validCells = [];
     /**@type {Character[]} */
     _validCharacters = [];
+    /** @type {'action'|'order'} */
+    selectionKind = 'action';
     /**@type {number} */
     activeCell = -1;
     constructor(props={}) {
@@ -800,6 +802,23 @@ export class PositionSelector extends eskv.Widget {
         }
         this.activeCell = minDistInd>=0? minDistInd : maxDistInd;
     }
+    draw(app, ctx) {
+        super.draw(app, ctx);
+        if (this.activeCell < 0 || this.activeCell >= this._validCells.length) return;
+        const pos = this._validCells[this.activeCell];
+        const color = this.selectionKind === 'order'
+            ? 'rgba(255,190,70,0.98)'
+            : 'rgba(90,220,255,0.96)';
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.08;
+        ctx.strokeRect(pos[0] + 0.08, pos[1] + 0.08, 0.84, 0.84);
+        ctx.lineWidth = 0.04;
+        ctx.strokeRect(pos[0] + 0.18, pos[1] + 0.18, 0.64, 0.64);
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+    }
 }
 
 export class ObligationMapOverlay extends eskv.Widget {
@@ -808,7 +827,7 @@ export class ObligationMapOverlay extends eskv.Widget {
     randyEchoPos = null;
     /** @type {{turn:number, position: Vec2}[]} */
     randyPath = [];
-    /** @type {{turn:number, position: Vec2, label:string}[]} */
+    /** @type {{turn:number, position: Vec2, label:string, color?:string}[]} */
     objectivePositions = [];
     constructor(props={}) {
         super();
@@ -853,15 +872,21 @@ export class ObligationMapOverlay extends eskv.Widget {
         ctx.font = oldFont;
     }
     draw(app, ctx) {
+        for (const objective of this.objectivePositions) {
+            this.drawMarker(
+                ctx,
+                objective.position,
+                objective.color ?? 'rgba(255,165,0,0.86)',
+                objective.label ?? `T${objective.turn}`,
+                0.18,
+            );
+        }
         if (!this.replayMode) return;
         for (const step of this.randyPath) {
             this.drawMarker(ctx, step.position, 'rgba(60,120,255,0.58)', `R${step.turn}`, 0.13);
         }
         if (this.randyEchoPos) {
             this.drawMarker(ctx, this.randyEchoPos, 'rgba(50,170,255,0.85)', 'R');
-        }
-        for (const objective of this.objectivePositions) {
-            this.drawMarker(ctx, objective.position, 'rgba(255,165,0,0.86)', objective.label ?? `T${objective.turn}`, 0.18);
         }
     }
 }
@@ -1437,7 +1462,7 @@ export class MissionMap extends eskv.Widget {
      *   obligationTurns: number[],
      *   randyEchoPos: import('eskv/lib/eskv.js').VecLike|null,
      *   randyPath: {turn:number, position:import('eskv/lib/eskv.js').VecLike}[],
-     *   obligationObjectives: {turn:number, position:import('eskv/lib/eskv.js').VecLike, label:string}[],
+     *   obligationObjectives: {turn:number, position:import('eskv/lib/eskv.js').VecLike, label:string, color?:string}[],
      *   enemyIntents: {id:string, position:import('eskv/lib/eskv.js').VecLike, kind:'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[],
      * }} value
      */
@@ -1452,6 +1477,7 @@ export class MissionMap extends eskv.Widget {
             turn: objective.turn,
             position: eskv.v2(objective.position),
             label: objective.label,
+            color: objective.color,
         }));
         this.timelineOverlay.replayMode = value.replayMode;
         this.timelineOverlay.timelineTurn = value.timelineTurn;

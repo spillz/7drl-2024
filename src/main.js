@@ -2,6 +2,7 @@
 
 import * as eskv from "eskv/lib/eskv.js";
 import {parse} from "eskv/lib/modules/markup.js";
+import { SpriteWidget } from "eskv/lib/modules/sprites.js";
 import { MissionMap } from "./map.js";
 import { ActionItem } from "./action.js";
 import { Facing } from "./facing.js";
@@ -28,19 +29,29 @@ Game:
             BoxLayout:
                 id: 'topHeader'
                 orientation: 'horizontal'
-                hints: {w:1, h:'1.1'}
+                hints: {w:1, h:'1.0'}
                 bgColor: 'rgb(16,16,24)'
                 paddingX: '0.3'
                 paddingY: '0.2'
                 FPS:
                     id: 'fpsHeader'
-                    hints: {w:'8'}
+                    hints: {w:'3'}
                     align:'left'
+                    sizeGroup: 'uiHeader'
+                    fontSize: '0.34'
                 Label:
                     id: 'globalHeaderLabel'
-                    hints: {w:1}
                     text: 'Mission: active | turn:1 tick:0 live'
-                    align: 'left'
+                    align: 'center'
+                    sizeGroup: 'uiHeader'
+                    fontSize: '0.34'
+                Label:
+                    id: 'headerPromptLabel'
+                    hints: {w:'6'}
+                    text: ''
+                    align: 'right'
+                    sizeGroup: 'uiHeader'
+                    fontSize: '0.30'
             BoxLayout:
                 orientation: 'horizontal'
                 id: 'game'
@@ -55,8 +66,10 @@ Game:
                     Label:
                         text: 'Randy'
                         align: 'left'
+                        sizeGroup: 'uiSection'
+                        fontSize: '0.32'
                     BoxLayout:
-                        hints: {h:'2.7'}
+                        hints: {h:'2.5'}
                         orientation: 'horizontal'
                         SpriteWidget:
                             id: 'randyPortrait'
@@ -68,6 +81,8 @@ Game:
                             text: 'HP: -'
                             wrap: true
                             align: 'left'
+                            sizeGroup: 'uiBody'
+                            fontSize: '0.29'
                     BoxLayout:
                         hints: {h:'3.5'}
                         id: 'firstPlayerInventory'
@@ -75,8 +90,10 @@ Game:
                     Label:
                         text: 'Maria'
                         align: 'left'
+                        sizeGroup: 'uiSection'
+                        fontSize: '0.32'
                     BoxLayout:
-                        hints: {h:'2.7'}
+                        hints: {h:'2.5'}
                         orientation: 'horizontal'
                         SpriteWidget:
                             id: 'mariaPortrait'
@@ -88,18 +105,17 @@ Game:
                             text: 'HP: -'
                             wrap: true
                             align: 'left'
+                            sizeGroup: 'uiBody'
+                            fontSize: '0.29'
                     BoxLayout:
                         hints: {h:'3.5'}
                         id: 'secondPlayerInventory'
                         orientation: 'horizontal'
                     Label:
-                        id: 'shortcutsLabel'
-                        text: 'Shortcuts: -'
-                        wrap: true
-                        align: 'left'
-                    Label:
                         text: 'Event Log'
                         align: 'left'
+                        sizeGroup: 'uiSection'
+                        fontSize: '0.32'
                     ScrollView:
                         id: 'logScroller'
                         uiZoom: false
@@ -109,12 +125,16 @@ Game:
                             text: 'No events yet.'
                             wrap: true
                             align: 'left'
+                            sizeGroup: 'uiBody'
+                            fontSize: '0.29'
                     BoxLayout:
                         hints: {h:'1.2'}
                         orientation: 'horizontal'
                         Button: 
                             text: 'Help'
                             hints: {w: '3'}
+                            sizeGroup: 'uiControl'
+                            fontSize: '0.3'
                             on_press:
                                 const help = window.app.findById('help');
                                 help.helpVal = 0;
@@ -124,6 +144,8 @@ Game:
                             text: '100%'
                             hints: {w: '3'}
                             id: 'zoomButton'
+                            sizeGroup: 'uiControl'
+                            fontSize: '0.3'
                             on_press:
                                 const scroller = window.app.findById('scroller');
                                 if(!scroller) return;
@@ -168,7 +190,7 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
-                    'Use W/A/S/D to move, space to pause, F to fire, G to arrest, T for stealth takedown, C for decoy, CTRL+SHIFT+F/G/T/C to queue a free Maria request from Randy, L to toggle full-map vision, [ and ] to rewind/fast-forward timeline, O to start Maria obligation loop.',
+                    'Use W/A/S/D to move, space to pause, F to fire, G to arrest, T for takedown, C for noisemaker decoy, SHIFT+F/G/T/C to queue a free Maria request from Randy, L to toggle full-map vision, [ and ] to rewind/fast-forward timeline, O to start Maria obligation loop.',
                     'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
@@ -246,6 +268,8 @@ class FPS extends eskv.Label {
 class Game extends eskv.App {
     /** @type {GameState|null} */
     gameState = null;
+    /** @type {boolean} */
+    debugOverlayVisible = false;
     constructor(props={}) {
         super();
         if (this.inputHandler) {
@@ -278,20 +302,125 @@ class Game extends eskv.App {
         const state = this.getGameState();
         const view = state.getView();
         const globalHeaderLabel = /**@type {eskv.Label}*/(this.findById('globalHeaderLabel'));
-        globalHeaderLabel.text = `Mission:${view.missionStatus} | T${view.timelineTurn}#${view.timelineTick} ${view.replayMode ? 'replay' : 'live'} | run:${view.runSeed} m:${view.missionIndex} seed:${view.missionSeed} | ${view.requestSummaryText} | ${view.signalStatusText} | ${view.message}`;
+        const levelName = `Mansion ${view.missionIndex + 1}`;
+        const activeName = view.activeCharacterId === 'none'
+            ? 'None'
+            : `${view.activeCharacterId[0].toUpperCase()}${view.activeCharacterId.slice(1)}`;
+        const gameStateTag = view.missionStatus === 'failure'
+            ? ' | GAME OVER'
+            : view.missionStatus === 'success'
+                ? ' | COMPLETE'
+                : '';
+        globalHeaderLabel.text = `${levelName} | T${view.timelineTurn}#${view.timelineTick} | Active: ${activeName}${gameStateTag}`;
+        const headerPromptLabel = /**@type {eskv.Label}*/(this.findById('headerPromptLabel'));
+        if (headerPromptLabel) {
+            if (view.awaitingSelection) {
+                headerPromptLabel.text = view.message;
+                headerPromptLabel.color = view.selectionKind === 'order'
+                    ? 'rgba(255,190,70,0.98)'
+                    : 'rgba(90,220,255,0.96)';
+            } else {
+                headerPromptLabel.text = '';
+                headerPromptLabel.color = 'rgba(215,215,225,0.92)';
+            }
+        }
         const mmap = this.getMissionMap();
         const randy = mmap.playerCharacters.find((player) => player.id === 'randy') ?? null;
         const maria = mmap.playerCharacters.find((player) => player.id === 'maria') ?? null;
+        /**
+         * @param {import('./character.js').Character|null} character
+         * @returns {eskv.Widget[]}
+         */
+        const buildInventoryRows = (character) => {
+            if (!character) return [];
+            /** @type {{iconFrames:number[], lines:string[]}[]} */
+            const groups = [];
+            /** @type {Map<string, {iconFrames:number[], lines:string[]}>} */
+            const byIcon = new Map();
+            for (const action of character.actions) {
+                const key = action.keyControl ? action.keyControl.toUpperCase() : '?';
+                const verb = action.keyControl === 'f' ? 'Fire'
+                    : action.keyControl === 'g' ? 'Arrest'
+                        : action.keyControl === 't' ? 'Takedown'
+                            : action.keyControl === 'c' ? 'Noise'
+                                : action.name;
+                const iconFrames = Array.isArray(action?.sprite?.frames) ? action.sprite.frames : [736];
+                const iconKey = iconFrames.join(',');
+                let group = byIcon.get(iconKey);
+                if (!group) {
+                    group = { iconFrames, lines: [] };
+                    byIcon.set(iconKey, group);
+                    groups.push(group);
+                }
+                group.lines.push(`${verb} [${key}]`);
+            }
+            const rows = [];
+            for (const group of groups) {
+                const rowHeight = Math.max(1.05, 0.8 + group.lines.length * 0.5);
+                const row = eskv.BoxLayout.a({ orientation: 'horizontal', hints: { h: `${rowHeight}` } });
+                const icon = SpriteWidget.a({
+                    spriteSheet: eskv.App.resources['sprites'],
+                    frames: group.iconFrames,
+                    hints: { w: '1.0', h: '1.0' },
+                });
+                const label = eskv.Label.a({
+                    text: group.lines.join('\n'),
+                    wrap: true,
+                    align: 'left',
+                    sizeGroup: 'uiBody',
+                    fontSize: '0.29',
+                    hints: { w: 1 },
+                });
+                row.children = [icon, label];
+                rows.push(row);
+            }
+            return rows;
+        };
+        /**
+         * @param {import('./character.js').Character|null} character
+         * @returns {eskv.Widget[]}
+         */
+        const buildInventoryContent = (character) => {
+            const column = eskv.BoxLayout.a({ orientation: 'vertical', hints: { w: 1, h: 1 } });
+            column.children = buildInventoryRows(character);
+            return [column];
+        };
+        /** @returns {eskv.Widget[]} */
+        const buildMariaOrderContent = () => {
+            const column = eskv.BoxLayout.a({ orientation: 'vertical', hints: { w: 1, h: 1 } });
+            const orders = eskv.Label.a({
+                text: 'Orders (Shift)\nFire [F]\nArrest [G]\nTakedown [T]\nNoise [C]',
+                wrap: true,
+                align: 'left',
+                sizeGroup: 'uiBody',
+                fontSize: '0.29',
+                hints: { w: 1, h: 1 },
+            });
+            column.children = [orders];
+            return [column];
+        };
         const randyStatusLabel = /**@type {eskv.Label}*/(this.findById('randyStatusLabel'));
         const mariaStatusLabel = /**@type {eskv.Label}*/(this.findById('mariaStatusLabel'));
+        const isRandyActive = mmap.activeCharacter===randy;
+        const isMariaActive = mmap.activeCharacter===maria;
+        const randyVitals = randy ? `HP ${randy.health}/${randy.maxHealth} | AP ${randy.actionsThisTurn}` : 'Unavailable';
+        const mariaVitals = maria ? `HP ${maria.health}/${maria.maxHealth} | AP ${maria.actionsThisTurn}` : 'Unavailable';
         randyStatusLabel.text = randy
-            ? `HP ${randy.health}/${randy.maxHealth} | AP ${randy.actionsThisTurn} | POS ${randy.gpos[0]},${randy.gpos[1]}${mmap.activeCharacter===randy?' | ACTIVE':''}`
+            ? `${randyVitals}\nMove [W/A/S/D], Wait [SPACE]\n${isRandyActive ? 'ACTIVE' : 'STANDBY'}`
             : 'Unavailable';
         mariaStatusLabel.text = maria
-            ? `HP ${maria.health}/${maria.maxHealth} | AP ${maria.actionsThisTurn} | POS ${maria.gpos[0]},${maria.gpos[1]}${mmap.activeCharacter===maria?' | ACTIVE':''}`
+            ? isMariaActive
+                ? `${mariaVitals}\nMove [W/A/S/D], Wait [SPACE]\nACTIVE`
+                : `${mariaVitals}\nWAITING IN BREACH`
             : 'Unavailable';
-        const shortcutsLabel = /**@type {eskv.Label}*/(this.findById('shortcutsLabel'));
-        shortcutsLabel.text = view.shortcutsText;
+        const firstPlayerInventory = /**@type {eskv.Widget}*/(this.findById('firstPlayerInventory'));
+        const secondPlayerInventory = /**@type {eskv.Widget}*/(this.findById('secondPlayerInventory'));
+        if (firstPlayerInventory) firstPlayerInventory.children = buildInventoryContent(randy);
+        if (secondPlayerInventory) {
+            secondPlayerInventory.children = isMariaActive
+                ? buildInventoryContent(maria)
+                : buildMariaOrderContent();
+        }
         const logLabel = /**@type {eskv.Label}*/(this.findById('logLabel'));
         logLabel.text = `${view.objectiveText}\n${view.enemyStatusText}\n${view.logText}`;
         const zoomButton = /**@type {eskv.Button}*/(this.findById('zoomButton'));
@@ -302,6 +431,7 @@ class Game extends eskv.App {
         const ps = mmap.positionSelector;
         ps.validCells = view.selectorCells;
         ps.activeCell = view.selectorIndex;
+        ps.selectionKind = view.selectionKind === 'order' ? 'order' : 'action';
         mmap.setObligationOverlayData({
             replayMode: view.replayMode,
             timelineTurn: view.timelineTurn,
@@ -331,10 +461,21 @@ class Game extends eskv.App {
         if(typeof rawKey!=='string') return;
         const key = rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
         const shift = Boolean(v?.event?.shiftKey);
-        const ctrlOrMeta = Boolean(v?.event?.ctrlKey || v?.event?.metaKey);
         const state = this.getGameState();
+        if (key==='\\') {
+            this.debugOverlayVisible = !this.debugOverlayVisible;
+            this.syncUiWithGameState();
+            this.updateCameraFromGameState();
+            return;
+        }
         if (key==='l') {
             state.toggleFullVision();
+            this.syncUiWithGameState();
+            this.updateCameraFromGameState();
+            return;
+        }
+        if (key==='o') {
+            state.dispatchIntent({type:'startObligationLoop'});
             this.syncUiWithGameState();
             this.updateCameraFromGameState();
             return;
@@ -344,16 +485,19 @@ class Game extends eskv.App {
             else if (key==='a') state.dispatchIntent({type:'moveSelection', direction: Facing.west});
             else if (key==='s') state.dispatchIntent({type:'moveSelection', direction: Facing.south});
             else if (key==='d') state.dispatchIntent({type:'moveSelection', direction: Facing.east});
-            else if (key==='e') state.dispatchIntent({type:'confirmSelection'});
-            else if (key==='Escape') state.dispatchIntent({type:'cancelSelection'});
+            else if (key==='e' || key==='Enter') state.dispatchIntent({type:'confirmSelection'});
+            else if (key==='Escape' || key==='Backspace') state.dispatchIntent({type:'cancelSelection'});
+            else if (key==='f' || key==='g' || key==='t' || key==='c') {
+                state.dispatchIntent({type:'cancelSelection'});
+                state.dispatchIntent({type:'startActionFromKey', key});
+            }
                 else return;
         } else {
             const requestable = key==='f' || key==='g' || key==='t' || key==='c';
-            const queueRequest = ctrlOrMeta && shift && requestable;
+            const queueRequest = shift && requestable;
             if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
             else if (key==='[') state.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
             else if (key===']') state.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
-            else if (key==='o') state.dispatchIntent({type:'startObligationLoop'});
             else if (queueRequest) state.dispatchIntent({type:'requestActionFromKey', key});
             else if (key==='w') state.dispatchIntent({type:'move', direction: Facing.north});
             else if (key==='a') state.dispatchIntent({type:'move', direction: Facing.west});

@@ -216,7 +216,7 @@ export class StealthTakedownAction extends ActionItem {
     keyControl = 't';
     constructor() {
         super();
-        this.label.text = 'Stealth Takedown';
+        this.label.text = 'Takedown';
         this.sprite.frames = [867];
     }
     /** @type {ActionItem['request']} */
@@ -253,14 +253,14 @@ export class DecoyAction extends ActionItem {
     keyControl = 'c';
     constructor() {
         super();
-        this.label.text = 'Decoy';
+        this.label.text = 'Noisemaker';
         this.sprite.frames = [736];
     }
     /** @type {ActionItem['request']} */
     request(actor, map, response) {
         if (response.targetPosition) {
-            map.emitDecoy(response.targetPosition, 8, actor.id, 2);
-            return { result: 'complete', message: `Decoy deployed at ${response.targetPosition}` };
+            map.emitDecoy(response.targetPosition, 9, actor.id, 3);
+            return { result: 'complete', message: `Noisemaker deployed at ${response.targetPosition}` };
         }
         /** @type {eskv.Vec2[]} */
         const validTargetPositions = [];
@@ -273,9 +273,9 @@ export class DecoyAction extends ActionItem {
             }
         }
         if (validTargetPositions.length === 0) {
-            return { result: 'notAvailable', message: 'No valid decoy position in range' };
+            return { result: 'notAvailable', message: 'No valid noisemaker position in range' };
         }
-        return { result: 'infoNeeded', message: 'Select decoy position', validTargetPositions };
+        return { result: 'infoNeeded', message: 'Select noisemaker position', validTargetPositions };
     }
 }
 

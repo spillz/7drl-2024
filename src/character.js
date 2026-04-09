@@ -255,7 +255,7 @@ export class Character extends Entity {
         if(this.actionInventory) {
             const children = [];
             for(let a of this.actions) {
-                a.hints = {w:'3', h:'3'};
+                a.hints = {w:'1.9', h:'1.9'};
                 children.push(a);
             }
             this.actionInventory.children = children;
@@ -268,7 +268,7 @@ export class Character extends Entity {
     addAction(action) {
         if(this.actions.has(action)) return false;
         this.actions.add(action);
-        action.hints = {w:'3', h:'3'};
+        action.hints = {w:'1.9', h:'1.9'};
         if(this.actionInventory) this.actionInventory.addChild(action);
         return true;
     }

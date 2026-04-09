@@ -1,7 +1,8 @@
 //@ts-check
 
+import * as eskv from "eskv/lib/eskv.js";
 import { Facing, FacingVec } from "./facing.js";
-import { MetaLayers, MissionMap } from "./map.js";
+import { LayoutTiles, MetaLayers, MissionMap } from "./map.js";
 import { Character, PlayerCharacter } from "./character.js";
 import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./action.js";
 
@@ -33,6 +34,8 @@ import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./actio
  * } | {
  *   type: 'requestActionFromKey',
  *   key: string,
+ *   targetCharacterId?: string,
+ *   targetPosition?: import('eskv/lib/eskv.js').VecLike,
  * } | {
  *   type: 'moveSelection',
  *   direction: Facing,
@@ -69,6 +72,7 @@ import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./actio
  *   actorId: string,
  *   position: import('eskv/lib/eskv.js').VecLike,
  *   label: string,
+ *   color?: string,
  * }} ObligationObjective
  */
 
@@ -86,6 +90,7 @@ import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./actio
  * @typedef {{
  *   message: string,
  *   awaitingSelection: boolean,
+ *   selectionKind: 'none'|'action'|'order',
  *   selectorCells: import('eskv/lib/eskv.js').Vec2[],
  *   selectorIndex: number,
  *   objectiveText: string,
@@ -119,6 +124,10 @@ import { ArrestAction, DecoyAction, Rifle, StealthTakedownAction } from "./actio
  *   turn: number,
  *   key: string,
  *   sourcePos: import('eskv/lib/eskv.js').VecLike,
+ *   targetCharacterId: string | null,
+ *   targetPosition: import('eskv/lib/eskv.js').VecLike | null,
+ *   earliestTurn?: number,
+ *   feasible?: boolean,
  *   fulfilled: boolean,
  *   fulfilledTick: number | null,
  *   label: string,
@@ -227,6 +236,10 @@ export class GameState {
     activePlayerAction = null;
     /** @type {import('./action.js').ActionResponseData | null} */
     activePlayerActionData = null;
+    /** @type {{key:string, validTargetCharacters?: Character[], validTargetPositions?: import('eskv/lib/eskv.js').Vec2[]} | null} */
+    pendingMariaRequestSelection = null;
+    /** @type {GameIntent | null} */
+    timelineIntentOverride = null;
     /** @type {string} */
     message = 'Welcome to the mansion';
     /** @type {MissionStatus} */
@@ -285,6 +298,8 @@ export class GameState {
     persistentSeenCells = new Set();
     /** @type {boolean} */
     debugFullVision = false;
+    /** @type {Map<string, import('eskv/lib/eskv.js').VecLike>} */
+    initialPlayerPositions = new Map();
 
     /** @param {MissionMap} missionMap */
     constructor(missionMap) {
@@ -293,7 +308,9 @@ export class GameState {
 
     setupLevel() {
         this.missionSeed = this.computeMissionSeed(this.runSeed, this.missionIndex);
+        this.initialPlayerPositions = new Map();
         this.setupMissionFromCurrentSeeds();
+        this.captureInitialPlayerPositions();
         this.timeline = [];
         this.timelineTick = 0;
         this.timelineTurn = 1;
@@ -312,6 +329,7 @@ export class GameState {
 
     setupMissionFromCurrentSeeds() {
         this.missionMap.setupLevel(this.missionSeed);
+        this.applyInitialPlayerPositions();
         this.initializeCharacterState();
         this.setActivePlayerById('randy', false);
         this.hostilityEscalated = false;
@@ -338,6 +356,7 @@ export class GameState {
         this.missionMap.updateCharacterVisibility(true);
         this.activePlayerAction = null;
         this.activePlayerActionData = null;
+        this.pendingMariaRequestSelection = null;
         this.selectorCells = [];
         this.selectorIndex = -1;
         this.initializeObjectives();
@@ -346,6 +365,45 @@ export class GameState {
         this.updateMissionOutcome();
         this.applyVisibilityMode();
         this.ensureReplayGhostVisible();
+    }
+
+    captureInitialPlayerPositions() {
+        this.initialPlayerPositions = new Map(
+            this.missionMap.playerCharacters.map((player) => [player.id, [player.gpos[0], player.gpos[1]]]),
+        );
+    }
+
+    applyInitialPlayerPositions() {
+        if (this.initialPlayerPositions.size === 0) return;
+        for (const player of this.missionMap.playerCharacters) {
+            const start = this.initialPlayerPositions.get(player.id);
+            if (!start) continue;
+            player.gpos[0] = start[0];
+            player.gpos[1] = start[1];
+            player.x = start[0];
+            player.y = start[1];
+        }
+    }
+
+    ensureInitialPlayerPositions() {
+        if (this.initialPlayerPositions.size > 0) return;
+        /** @type {Map<string, import('eskv/lib/eskv.js').VecLike>} */
+        const inferred = new Map();
+        const appliedEvents = this.timeline
+            .filter((event) => event.result === 'applied' && event.actorPos !== null)
+            .sort((a, b) => a.turn - b.turn || a.tick - b.tick);
+        for (const event of appliedEvents) {
+            if (!event.actorPos) continue;
+            if (!inferred.has(event.actorId)) {
+                inferred.set(event.actorId, [event.actorPos[0], event.actorPos[1]]);
+            }
+        }
+        for (const player of this.missionMap.playerCharacters) {
+            const inferredPos = inferred.get(player.id)
+                ?? inferred.get('randy')
+                ?? [player.gpos[0], player.gpos[1]];
+            this.initialPlayerPositions.set(player.id, [inferredPos[0], inferredPos[1]]);
+        }
     }
 
     initializeCharacterState() {
@@ -593,7 +651,7 @@ export class GameState {
     enemyFacingAllowsSight(enemy, target, data) {
         if (enemy.facing === Facing.none) return true;
         const delta = target.gpos.sub(enemy.gpos);
-        const dist = delta.mag();
+        const dist = enemy.gpos.dist(target.gpos);
         if (dist <= 0.001) return true;
         const fvec = FacingVec[enemy.facing];
         const forward = (delta[0] * fvec[0] + delta[1] * fvec[1]) / dist;
@@ -663,8 +721,9 @@ export class GameState {
                     }
                 }
             } else if (noticedDecoy) {
-                nextAwareness = this.maxAwareness(nextAwareness, 'aware');
-                data.awarenessCooldown = Math.max(data.awarenessCooldown, 1);
+                // Decoys should pull guard attention as an active investigation cue.
+                nextAwareness = this.maxAwareness(nextAwareness, 'investigating');
+                data.awarenessCooldown = Math.max(data.awarenessCooldown, 2);
                 data.lastKnownThreatPos = noticedDecoyEvents[0].position.add([0, 0]);
                 data.lastKnownThreatTtl = Math.max(2, noticedDecoyEvents[0].ttl);
             } else if (!isScientist && allyCommunicated) {
@@ -914,12 +973,18 @@ export class GameState {
         this.mariaRequests = this.timeline
             .filter((event) => event.result === 'applied' && event.actorId === 'randy' && event.intent.type === 'requestActionFromKey' && event.actorPos !== null)
             .map((event) => {
-                const requestIntent = /** @type {{type:'requestActionFromKey', key:string}} */ (event.intent);
+                const requestIntent = /** @type {{type:'requestActionFromKey', key:string, targetCharacterId?: string, targetPosition?: import('eskv/lib/eskv.js').VecLike}} */ (event.intent);
                 const key = this.normalizeRequestKey(requestIntent.key);
                 return {
                     turn: event.turn,
                     key,
                     sourcePos: [event.actorPos[0], event.actorPos[1]],
+                    targetCharacterId: typeof requestIntent.targetCharacterId === 'string' ? requestIntent.targetCharacterId : null,
+                    targetPosition: Array.isArray(requestIntent.targetPosition)
+                        ? [requestIntent.targetPosition[0], requestIntent.targetPosition[1]]
+                        : null,
+                    earliestTurn: 1,
+                    feasible: true,
                     fulfilled: false,
                     fulfilledTick: null,
                     label: this.describeRequestKey(key),
@@ -929,13 +994,25 @@ export class GameState {
     }
 
     snapshotObligationObjectivesFromRequests() {
-        this.obligationObjectives = this.mariaRequests.map((request, index) => ({
-            turn: request.turn,
-            tick: request.fulfilledTick ?? index,
-            actorId: 'maria',
-            position: [request.sourcePos[0], request.sourcePos[1]],
-            label: `${this.requestMarkerLabel(request.key)} T${request.turn}`,
-        })).sort((a, b) => a.turn - b.turn || a.tick - b.tick);
+        this.obligationObjectives = this.mariaRequests.map((request, index) => {
+            const timing = this.estimateMariaRequestFeasibility(request.targetPosition, request.turn);
+            request.earliestTurn = timing.earliestTurn;
+            request.feasible = timing.feasible;
+            return {
+                turn: request.turn,
+                tick: request.fulfilledTick ?? index,
+                actorId: 'maria',
+                position: request.targetPosition
+                    ? [request.targetPosition[0], request.targetPosition[1]]
+                    : [request.sourcePos[0], request.sourcePos[1]],
+                label: timing.feasible
+                    ? `${this.requestMarkerLabel(request.key)} T${request.turn}`
+                    : `${this.requestMarkerLabel(request.key)} T${request.turn}!`,
+                color: timing.feasible
+                    ? 'rgba(255,165,0,0.86)'
+                    : 'rgba(255,95,95,0.94)',
+            };
+        }).sort((a, b) => a.turn - b.turn || a.tick - b.tick);
     }
 
     /**
@@ -973,8 +1050,72 @@ export class GameState {
         if (key === 'f') return 'FIRE';
         if (key === 'g') return 'ARREST';
         if (key === 't') return 'TAKE';
-        if (key === 'c') return 'DECOY';
+        if (key === 'c') return 'NOISE';
         return key.toUpperCase();
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} start
+     * @param {import('eskv/lib/eskv.js').VecLike} target
+     * @returns {number}
+     */
+    shortestTraverseDistance(start, target) {
+        const w = this.missionMap.w;
+        const h = this.missionMap.h;
+        const sx = Math.floor(start[0]);
+        const sy = Math.floor(start[1]);
+        const tx = Math.floor(target[0]);
+        const ty = Math.floor(target[1]);
+        if (sx === tx && sy === ty) return 0;
+        if (sx < 0 || sy < 0 || sx >= w || sy >= h) return Number.POSITIVE_INFINITY;
+        if (tx < 0 || ty < 0 || tx >= w || ty >= h) return Number.POSITIVE_INFINITY;
+        const total = w * h;
+        /** @type {Int32Array} */
+        const dist = new Int32Array(total);
+        dist.fill(-1);
+        /** @type {[number, number][]} */
+        const queue = [[sx, sy]];
+        const sidx = sx + sy * w;
+        dist[sidx] = 0;
+        let head = 0;
+        while (head < queue.length) {
+            const [x, y] = queue[head++];
+            const idx = x + y * w;
+            const cur = dist[idx];
+            const traversible = this.missionMap.metaTileMap.getFromLayer(MetaLayers.traversible, [x, y]);
+            for (const direction of [Facing.north, Facing.east, Facing.south, Facing.west]) {
+                if ((traversible & (1 << direction)) === 0) continue;
+                const npos = [x + FacingVec[direction][0], y + FacingVec[direction][1]];
+                const nx = npos[0];
+                const ny = npos[1];
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const nidx = nx + ny * w;
+                if (dist[nidx] >= 0) continue;
+                dist[nidx] = cur + 1;
+                if (nx === tx && ny === ty) return dist[nidx];
+                queue.push([nx, ny]);
+            }
+        }
+        return Number.POSITIVE_INFINITY;
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike|null} targetPosition
+     * @param {number} requestTurn
+     * @returns {{earliestTurn:number, feasible:boolean}}
+     */
+    estimateMariaRequestFeasibility(targetPosition, requestTurn) {
+        if (!targetPosition) return { earliestTurn: 1, feasible: true };
+        const mariaStart = this.initialPlayerPositions.get('maria')
+            ?? this.missionMap.playerCharacters.find((p) => p.id === 'maria')?.gpos
+            ?? [0, 0];
+        const distance = this.shortestTraverseDistance(mariaStart, targetPosition);
+        if (!Number.isFinite(distance)) {
+            return { earliestTurn: Number.MAX_SAFE_INTEGER, feasible: false };
+        }
+        // Two actions per turn, reserve one action for executing the requested order.
+        const earliestTurn = Math.max(1, Math.ceil((distance + 1) / 2));
+        return { earliestTurn, feasible: earliestTurn <= requestTurn };
     }
 
     /**
@@ -984,8 +1125,8 @@ export class GameState {
     describeRequestKey(key) {
         if (key === 'f') return 'fire rifle';
         if (key === 'g') return 'arrest';
-        if (key === 't') return 'stealth takedown';
-        if (key === 'c') return 'deploy decoy';
+        if (key === 't') return 'takedown';
+        if (key === 'c') return 'deploy noisemaker';
         return `action ${key}`;
     }
 
@@ -1197,6 +1338,217 @@ export class GameState {
         this.addLog(`ANOMALY +1 (unrequested Maria action '${performedKey}' on T${turn})`);
     }
 
+    /**
+     * @param {PlayerCharacter} randy
+     * @param {string} key
+     * @returns {{validTargetCharacters?: Character[], validTargetPositions?: import('eskv/lib/eskv.js').Vec2[]}|null}
+     */
+    getOrderTargetsFromRandyLOS(randy, key) {
+        if (key === 'c') {
+            /** @type {import('eskv/lib/eskv.js').Vec2[]} */
+            const visibleWalkable = [];
+            const layout = this.missionMap.metaTileMap.layer[MetaLayers.layout];
+            for (const pos of layout.iterAll()) {
+                const tile = layout.get(pos);
+                if (tile !== LayoutTiles.floor && tile !== LayoutTiles.hallway) continue;
+                if (randy._visibleLayer.get(pos) === 1) {
+                    visibleWalkable.push(pos.add([0, 0]));
+                }
+            }
+            if (visibleWalkable.length === 0) return null;
+            visibleWalkable.sort((a, b) => a.dist(randy.gpos) - b.dist(randy.gpos));
+            return { validTargetPositions: visibleWalkable };
+        }
+        const visibleEnemies = this.missionMap.enemies
+            .filter((enemy) => enemy.state !== 'dead' && randy.canSee(enemy, this.missionMap))
+            .sort((a, b) => a.gpos.dist(randy.gpos) - b.gpos.dist(randy.gpos) || a.id.localeCompare(b.id));
+        if (visibleEnemies.length === 0) return null;
+        return { validTargetCharacters: visibleEnemies };
+    }
+
+    /**
+     * @param {PlayerCharacter} randy
+     * @param {string} key
+     * @returns {boolean}
+     */
+    beginMariaRequestSelection(randy, key) {
+        const targets = this.getOrderTargetsFromRandyLOS(randy, key);
+        if (!targets) {
+            this.message = `No visible target for Maria order '${this.describeRequestKey(key)}'.`;
+            return false;
+        }
+        this.activePlayerAction = null;
+        this.activePlayerActionData = null;
+        this.pendingMariaRequestSelection = {
+            key,
+            validTargetCharacters: targets.validTargetCharacters,
+            validTargetPositions: targets.validTargetPositions,
+        };
+        this.selectorCells = targets.validTargetCharacters
+            ? targets.validTargetCharacters.map((target) => target.gpos)
+            : (targets.validTargetPositions ?? []);
+        this.selectorIndex = this.selectorCells.length > 0 ? 0 : -1;
+        this.message = `Select target for Maria order: ${this.describeRequestKey(key)}.`;
+        return this.selectorCells.length > 0;
+    }
+
+    /**
+     * @param {string|null} id
+     * @returns {Character|null}
+     */
+    findEnemyById(id) {
+        if (!id) return null;
+        return this.missionMap.enemies.find((enemy) => enemy.id === id) ?? null;
+    }
+
+    /**
+     * Apply arrested state to both widget and authoritative character state.
+     * @param {Character} target
+     */
+    detainEnemy(target) {
+        target.state = 'surrendering';
+        const data = this.characterState.get(target.id);
+        if (data) {
+            data.priorBehaviorState = data.behaviorState;
+            data.behaviorState = 'surrendering';
+            data.casualtyState = 'detained';
+            data.awarenessState = 'unaware';
+            data.actionsRemaining = 0;
+            data.lastKnownThreatPos = null;
+            data.lastKnownThreatTtl = 0;
+        }
+        if (this.isScientistId(target.id)) {
+            this.escapedScientistIds.delete(target.id);
+            this.scientistPreviousPositions.delete(target.id);
+            this.scientistFleeStallTurns.delete(target.id);
+            this.scientistPassiveWaitTurns.delete(target.id);
+        }
+    }
+
+    /**
+     * Apply Maria order immediately during Randy's run without spending Maria AP.
+     * @param {PlayerCharacter} randy
+     * @param {string} key
+     * @param {string|null} targetCharacterId
+     * @param {import('eskv/lib/eskv.js').VecLike|null} targetPosition
+     * @returns {boolean}
+     */
+    applyProjectedMariaOrderDuringRandyRun(randy, key, targetCharacterId, targetPosition) {
+        if (this.replayMode || randy.id !== 'randy') {
+            this.message = 'Maria projected orders are only available during Randy run.';
+            return false;
+        }
+        const maria = this.missionMap.playerCharacters.find((player) => player.id === 'maria') ?? null;
+        if (!maria || maria.state === 'dead' || maria.health <= 0) {
+            this.message = 'Maria unavailable for projected order.';
+            return false;
+        }
+        /** @type {MariaRequest} */
+        const request = {
+            turn: this.timelineTurn,
+            key,
+            sourcePos: [randy.gpos[0], randy.gpos[1]],
+            targetCharacterId,
+            targetPosition: targetPosition ? [targetPosition[0], targetPosition[1]] : null,
+            fulfilled: false,
+            fulfilledTick: null,
+            label: this.describeRequestKey(key),
+        };
+        const priorMariaActions = maria.actionsThisTurn;
+        const mariaData = this.characterState.get(maria.id);
+        const priorMariaDataActions = mariaData?.actionsRemaining ?? priorMariaActions;
+        if (maria.actionsThisTurn <= 0) maria.actionsThisTurn = 1;
+        if (mariaData && mariaData.actionsRemaining <= 0) mariaData.actionsRemaining = 1;
+        const applied = this.applyOrderedMariaAction(maria, request);
+        maria.actionsThisTurn = priorMariaActions;
+        if (mariaData) mariaData.actionsRemaining = priorMariaDataActions;
+        return applied;
+    }
+
+    /**
+     * Queue a Maria request and immediately apply projected outcome in Randy run.
+     * @param {PlayerCharacter} randy
+     * @param {string} key
+     * @param {string|null} targetCharacterId
+     * @param {import('eskv/lib/eskv.js').VecLike|null} targetPosition
+     * @returns {boolean}
+     */
+    queueMariaRequestWithImmediateProjection(randy, key, targetCharacterId, targetPosition) {
+        const projected = this.applyProjectedMariaOrderDuringRandyRun(randy, key, targetCharacterId, targetPosition);
+        if (!projected) return false;
+        const actionResultText = this.message;
+        const targetText = targetCharacterId
+            ? targetCharacterId
+            : targetPosition
+                ? `${targetPosition[0]},${targetPosition[1]}`
+                : 'unknown';
+        const feasibility = this.estimateMariaRequestFeasibility(targetPosition, this.timelineTurn);
+        const warning = feasibility.feasible
+            ? ''
+            : ` WARNING: Maria earliest ETA T${feasibility.earliestTurn}.`;
+        this.message = `${actionResultText} Queued Maria request for T${this.timelineTurn}: ${this.describeRequestKey(key)} -> ${targetText}.${warning}`;
+        return true;
+    }
+
+    /**
+     * Execute a queued Maria order against Randy-selected target.
+     * This intentionally bypasses Maria-local range checks.
+     * @param {PlayerCharacter} maria
+     * @param {MariaRequest} request
+     * @returns {boolean}
+     */
+    applyOrderedMariaAction(maria, request) {
+        if (maria.actionsThisTurn <= 0) {
+            this.message = 'Maria has no actions remaining.';
+            return false;
+        }
+        const target = this.findEnemyById(request.targetCharacterId);
+        if (request.key === 'f') {
+            const rifle = maria.getActionForKey('f');
+            if (!(rifle instanceof Rifle)) return false;
+            if (!target || target.state === 'dead') {
+                this.message = 'Maria ordered fire target unavailable.';
+                return false;
+            }
+            const hit = rifle.fire(maria, this.missionMap, target);
+            maria.actionsThisTurn--;
+            this.message = `Maria ordered fire on ${target.id} (${hit ? 'hit' : 'miss'}).`;
+            return true;
+        }
+        if (request.key === 'g') {
+            if (!target || target.state === 'dead') {
+                this.message = 'Maria ordered arrest target unavailable.';
+                return false;
+            }
+            this.detainEnemy(target);
+            maria.actionsThisTurn--;
+            this.message = `Maria ordered arrest on ${target.id}.`;
+            return true;
+        }
+        if (request.key === 't') {
+            if (!target || target.state === 'dead') {
+                this.message = 'Maria ordered takedown target unavailable.';
+                return false;
+            }
+            target.state = 'unconscious';
+            maria.actionsThisTurn--;
+            this.message = `Maria ordered takedown on ${target.id}.`;
+            return true;
+        }
+        if (request.key === 'c') {
+            if (!request.targetPosition) {
+                this.message = 'Maria ordered noisemaker target unavailable.';
+                return false;
+            }
+            const pos = eskv.v2([request.targetPosition[0], request.targetPosition[1]]);
+            this.missionMap.emitDecoy(pos, 9, maria.id, 3);
+            maria.actionsThisTurn--;
+            this.message = `Maria ordered noisemaker at ${pos[0]},${pos[1]}.`;
+            return true;
+        }
+        return false;
+    }
+
     /** @returns {PlayerCharacter | null} */
     getActivePlayer() {
         const active = this.missionMap.activeCharacter;
@@ -1226,7 +1578,14 @@ export class GameState {
 
     /** @returns {boolean} */
     isAwaitingSelection() {
-        return this.activePlayerAction !== null;
+        return this.activePlayerAction !== null || this.pendingMariaRequestSelection !== null;
+    }
+
+    /** @returns {'none'|'action'|'order'} */
+    getSelectionKind() {
+        if (this.pendingMariaRequestSelection) return 'order';
+        if (this.activePlayerAction) return 'action';
+        return 'none';
     }
 
     /** @param {GameIntent} intent */
@@ -1258,10 +1617,17 @@ export class GameState {
             return;
         }
 
+        this.timelineIntentOverride = null;
         const result = this.applyIntent(intent);
-        this.recordTimelineEvent(intent, result ? 'applied' : 'ignored', this.message, eventTurn, eventTick, eventActor);
+        const timelineIntent = this.timelineIntentOverride ?? intent;
+        this.timelineIntentOverride = null;
+        this.recordTimelineEvent(timelineIntent, result ? 'applied' : 'ignored', this.message, eventTurn, eventTick, eventActor);
+        if (result && timelineIntent.type === 'requestActionFromKey' && !this.replayMode) {
+            this.buildMariaRequestsFromTimeline();
+            this.snapshotObligationObjectivesFromRequests();
+        }
         if (result) {
-            this.applyReplayObligationResult(intent, eventTurn, eventTick);
+            this.applyReplayObligationResult(timelineIntent, eventTurn, eventTick);
             this.addLog(this.message);
         }
     }
@@ -1278,7 +1644,7 @@ export class GameState {
         let intentApplied = false;
         this.lastCompletedActionKey = '';
 
-        if (!this.activePlayerAction) {
+        if (!this.isAwaitingSelection()) {
             switch (intent.type) {
                 case 'move':
                     player.move(intent.direction, this.missionMap);
@@ -1293,6 +1659,23 @@ export class GameState {
                     intentApplied = true;
                     break;
                 case 'startActionFromKey': {
+                    const requestedKey = this.normalizeRequestKey(intent.key);
+                    if (this.replayMode && player.id === 'maria') {
+                        const queuedRequest = this.mariaRequests.find((candidate) =>
+                            !candidate.fulfilled
+                            && candidate.turn === this.timelineTurn
+                            && candidate.key === requestedKey,
+                        );
+                        if (queuedRequest) {
+                            const applied = this.applyOrderedMariaAction(player, queuedRequest);
+                            if (applied) {
+                                intentApplied = true;
+                                progressedTurn = true;
+                                this.lastCompletedActionKey = requestedKey;
+                                break;
+                            }
+                        }
+                    }
                     const action = player.getActionForKey(intent.key);
                     if (!action) break;
                     const response = player.takeAction(action, this.missionMap);
@@ -1314,8 +1697,22 @@ export class GameState {
                         this.message = `No Maria request mapping for '${intent.key}'.`;
                         break;
                     }
-                    this.message = `Queued Maria request for T${this.timelineTurn}: ${this.describeRequestKey(requestedKey)}.`;
-                    intentApplied = true;
+                    const hasResolvedTarget = typeof intent.targetCharacterId === 'string'
+                        || (Array.isArray(intent.targetPosition) && intent.targetPosition.length >= 2);
+                    if (!hasResolvedTarget) {
+                        this.beginMariaRequestSelection(player, requestedKey);
+                        break;
+                    }
+                    const targetCharacterId = typeof intent.targetCharacterId === 'string' ? intent.targetCharacterId : null;
+                    const targetPosition = Array.isArray(intent.targetPosition)
+                        ? [intent.targetPosition[0], intent.targetPosition[1]]
+                        : null;
+                    intentApplied = this.queueMariaRequestWithImmediateProjection(
+                        player,
+                        requestedKey,
+                        targetCharacterId,
+                        targetPosition,
+                    );
                     break;
                 }
                 case 'debugRevealMap':
@@ -1335,8 +1732,11 @@ export class GameState {
                     intentApplied = true;
                     break;
                 case 'confirmSelection':
-                    progressedTurn = this.confirmSelection(player);
-                    intentApplied = progressedTurn;
+                    {
+                        const selectionResult = this.confirmSelection(player);
+                        progressedTurn = selectionResult.progressedTurn;
+                        intentApplied = selectionResult.intentApplied;
+                    }
                     break;
                 case 'cancelSelection':
                     this.clearSelectionState('Action canceled.');
@@ -1419,10 +1819,45 @@ export class GameState {
         this.selectorIndex = minDistIndex >= 0 ? minDistIndex : maxDistIndex;
     }
 
-    /** @param {PlayerCharacter} player */
+    /**
+     * @param {PlayerCharacter} player
+     * @returns {{progressedTurn:boolean, intentApplied:boolean}}
+     */
     confirmSelection(player) {
-        if (!this.activePlayerAction || !this.activePlayerActionData) return false;
-        if (this.selectorIndex < 0) return false;
+        if (this.pendingMariaRequestSelection) {
+            const selection = this.pendingMariaRequestSelection;
+            if (this.selectorIndex < 0) return { progressedTurn: false, intentApplied: false };
+            /** @type {string | undefined} */
+            let targetCharacterId = undefined;
+            /** @type {import('eskv/lib/eskv.js').VecLike | undefined} */
+            let targetPosition = undefined;
+            if (selection.validTargetCharacters && selection.validTargetCharacters.length > this.selectorIndex) {
+                const target = selection.validTargetCharacters[this.selectorIndex];
+                targetCharacterId = target.id;
+                targetPosition = [target.gpos[0], target.gpos[1]];
+            } else if (selection.validTargetPositions && selection.validTargetPositions.length > this.selectorIndex) {
+                const pos = selection.validTargetPositions[this.selectorIndex];
+                targetPosition = [pos[0], pos[1]];
+            } else {
+                return { progressedTurn: false, intentApplied: false };
+            }
+            /** @type {GameIntent} */
+            const queuedIntent = { type: 'requestActionFromKey', key: selection.key };
+            if (targetCharacterId) queuedIntent.targetCharacterId = targetCharacterId;
+            if (targetPosition) queuedIntent.targetPosition = [targetPosition[0], targetPosition[1]];
+            const queuedApplied = this.queueMariaRequestWithImmediateProjection(
+                player,
+                selection.key,
+                targetCharacterId ?? null,
+                targetPosition ?? null,
+            );
+            if (!queuedApplied) return { progressedTurn: false, intentApplied: false };
+            this.timelineIntentOverride = queuedIntent;
+            this.clearSelectionState(this.message);
+            return { progressedTurn: false, intentApplied: true };
+        }
+        if (!this.activePlayerAction || !this.activePlayerActionData) return { progressedTurn: false, intentApplied: false };
+        if (this.selectorIndex < 0) return { progressedTurn: false, intentApplied: false };
         const completedActionKey = this.activePlayerAction.keyControl ? this.normalizeRequestKey(this.activePlayerAction.keyControl) : '';
         const responseData = this.activePlayerActionData;
         if (responseData.validTargetCharacters && responseData.validTargetCharacters.length > 0) {
@@ -1435,13 +1870,17 @@ export class GameState {
         if (response.result === 'complete') {
             this.lastCompletedActionKey = completedActionKey;
         }
-        return response.result === 'complete';
+        return {
+            progressedTurn: response.result === 'complete',
+            intentApplied: response.result === 'complete',
+        };
     }
 
     /** @param {string} message */
     clearSelectionState(message) {
         this.activePlayerAction = null;
         this.activePlayerActionData = null;
+        this.pendingMariaRequestSelection = null;
         this.selectorCells = [];
         this.selectorIndex = -1;
         this.message = message;
@@ -1924,7 +2363,17 @@ export class GameState {
     /** @returns {EnemyIntentGlyph[]} */
     getEnemyIntentGlyphs() {
         return this.missionMap.enemies
-            .filter((enemy) => enemy.visibleToPlayer && enemy.state !== 'fleeing' && !this.escapedScientistIds.has(enemy.id))
+            .filter((enemy) => {
+                if (enemy.state === 'fleeing' || this.escapedScientistIds.has(enemy.id)) return false;
+                const data = this.characterState.get(enemy.id);
+                const forcedKnownState = enemy.state === 'surrendering'
+                    || enemy.state === 'unconscious'
+                    || enemy.state === 'dead'
+                    || data?.casualtyState === 'detained'
+                    || data?.casualtyState === 'unconscious'
+                    || data?.casualtyState === 'dead';
+                return enemy.visibleToPlayer || forcedKnownState;
+            })
             .map((enemy) => {
                 const data = this.characterState.get(enemy.id);
                 const kind = data ? this.predictEnemyIntentKind(enemy, data) : 'patrol';
@@ -1975,8 +2424,14 @@ export class GameState {
 
     updateMissionOutcome() {
         const scientistEnemies = this.missionMap.enemies.filter((enemy) => this.isScientistId(enemy.id));
-        const arrestedCount = scientistEnemies.filter((enemy) => enemy.state === 'surrendering').length;
-        const killedCount = scientistEnemies.filter((enemy) => enemy.state === 'dead').length;
+        const arrestedCount = scientistEnemies.filter((enemy) => {
+            const data = this.characterState.get(enemy.id);
+            return enemy.state === 'surrendering' || data?.casualtyState === 'detained';
+        }).length;
+        const killedCount = scientistEnemies.filter((enemy) => {
+            const data = this.characterState.get(enemy.id);
+            return enemy.state === 'dead' || data?.casualtyState === 'dead';
+        }).length;
         const escapedCount = scientistEnemies.filter((enemy) => this.escapedScientistIds.has(enemy.id)).length;
         const scientistTotal = Math.max(1, scientistEnemies.length);
 
@@ -2079,7 +2534,7 @@ export class GameState {
     }
 
     shortcutsSummary() {
-        return 'Randy actions: W/A/S/D move, SPACE wait, F/G/T/C action | Randy requests (free): CTRL+SHIFT+F/G/T/C | Maria actions: W/A/S/D, SPACE, F/G/T/C | O: start Maria replay loop';
+        return 'Randy actions: W/A/S/D move, SPACE wait, F/G/T/C action | Randy requests (free): SHIFT+F/G/T/C | Maria actions: W/A/S/D, SPACE, F/G/T/C | O: start Maria replay loop';
     }
 
     eventLogSummary() {
@@ -2128,6 +2583,7 @@ export class GameState {
         const intentsToApply = this.timeline
             .filter((event) => event.result === 'applied' && event.tick <= clamped)
             .map((event) => event.intent);
+        this.ensureInitialPlayerPositions();
         this.setupMissionFromCurrentSeeds();
         this.missionStatus = 'active';
         this.timelineTurn = 1;
@@ -2147,12 +2603,7 @@ export class GameState {
             this.addLog(this.message);
             return;
         }
-        if (this.missionStatus !== 'success') {
-            this.missionStatus = 'failure';
-            this.message = 'Mission failure: first run must complete all objectives before rewind.';
-            this.addLog(this.message);
-            return;
-        }
+        const bypassingObjectiveGate = this.missionStatus !== 'success';
         this.rememberSeenFromCurrentMap();
         this.snapshotRandyPathFromTimeline();
         this.buildRandyReplayScriptFromTimeline();
@@ -2164,6 +2615,7 @@ export class GameState {
             request.fulfilled = false;
             request.fulfilledTick = null;
         }
+        this.ensureInitialPlayerPositions();
         this.setupMissionFromCurrentSeeds();
         this.setActivePlayerById('maria');
         this.applyPersistentSeenToMap();
@@ -2171,7 +2623,9 @@ export class GameState {
         this.timeline = [];
         this.timelineTick = 0;
         this.timelineTurn = 1;
-        this.message = `Obligation loop started. Maria requests queued: ${this.mariaRequests.length}.`;
+        this.message = bypassingObjectiveGate
+            ? `Obligation loop started (debug bypass: first run incomplete). Maria requests queued: ${this.mariaRequests.length}.`
+            : `Obligation loop started. Maria requests queued: ${this.mariaRequests.length}.`;
         this.addLog(this.message);
     }
 
@@ -2179,7 +2633,8 @@ export class GameState {
     getView() {
         return {
             message: this.message,
-            awaitingSelection: this.activePlayerAction !== null,
+            awaitingSelection: this.isAwaitingSelection(),
+            selectionKind: this.getSelectionKind(),
             selectorCells: this.selectorCells,
             selectorIndex: this.selectorIndex,
             objectiveText: this.objectiveSummary(),
@@ -2202,6 +2657,7 @@ export class GameState {
             obligationObjectives: this.obligationObjectives.map((objective) => ({
                 ...objective,
                 position: [objective.position[0], objective.position[1]],
+                color: objective.color,
             })),
             obligationTurns: [...new Set(this.obligationObjectives.map((objective) => objective.turn))].sort((a, b) => a - b),
             randyPath: this.randyPath.map((step) => ({
