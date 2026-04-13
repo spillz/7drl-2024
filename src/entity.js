@@ -110,6 +110,7 @@ export class DoorWidget extends Entity {
             map.metaTileMap.layer[MetaLayers.allowsSight].set(this.pos, 0b1111);
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, as|binaryFacing[rotr]); //as|binaryFacing[rotr]
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, (as&~binaryFacing[back])|binaryFacing[rot]);
+            map.recomputeSmokeCoverage();
             return true;
         }
         if(this.state==='open') {
@@ -121,6 +122,7 @@ export class DoorWidget extends Entity {
             const bpos2 = bpos.add(FacingVec[rot]);
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos, 0b1111);
             if(map.metaTileMap.layer[MetaLayers.layout].get(bpos2)===LayoutTiles.floor) map.metaTileMap.layer[MetaLayers.allowsSight].set(bpos2, 0b1111);
+            map.recomputeSmokeCoverage();
             return true;
         }
         return false;

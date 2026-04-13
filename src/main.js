@@ -154,7 +154,7 @@ Game:
                 BoxLayout:
                     bgColor: 'rgb(35,35,45)'
                     orientation: 'horizontal'
-                    ScrollView:
+                    MapScrollView:
                         id: 'scroller'
                         uiZoom: false
                         hints: {h:1, w:1}
@@ -190,7 +190,7 @@ Game:
                 ][this.helpVal];
                 const helpText = window.app.findById('helpText');
                 helpText.text = [
-                    'Use W/A/S/D to move, space to pause, F to fire, G to arrest, T for takedown, C for noisemaker decoy, SHIFT+F/G/T/C to queue a free Maria request from Randy, L to toggle full-map vision, [ and ] to rewind/fast-forward timeline, O to start Maria obligation loop.',
+                    'Use W/A/S/D to move, SPACE to pause, F fire, C suppress, Q aim, X decoy, G arrest, T takedown, H/J/K/B/U for breaching tools, and N/M for frag/smoke grenades. Hold SHIFT plus an action key to queue a free Maria request from Randy. L toggles full-map vision, P toggles patrol routes, [ and ] rewind/fast-forward timeline, and O starts Maria obligation loop.',
                     'Navigate the level to complete the mission objectives.',
                     'Intro: In the 22nd century, mankind has moved to the stars and conquered space. However, the realm of time is still one that has eluded them. Until now. Deep in the Unified Space Government’s most classified labs, the beginnings of time looping technology are being created.'+ 
                     '\\n\\nHowever, such a powerful technology always attracts those who want to use it for evil. Thanks to an inside mole, a group of reckless idealists have managed to get their hands on this technology. This group wants to wield the tech on a global sale by selling it to the highest bidder in violation of arms control laws. They hope that this will be the final step needed to bring about the “final revolution” that will ultimately achieve a stable universal government and a world where history can finally, truly be rewritten.'+
@@ -265,11 +265,133 @@ class FPS extends eskv.Label {
     }
 }
 
+class MapScrollView extends eskv.ScrollView {
+    /** @type {boolean} */
+    dragDebug = true;
+    /** @type {number} */
+    lastDragLogTime = 0;
+
+    /** @returns {{x:number,y:number,id:string|number,time:number,vel:[number,number]|null}|null} */
+    summarizeOldTouch() {
+        const oldTouch = /** @type {any} */ (this)._oldTouch;
+        if (!oldTouch) return null;
+        const vel = oldTouch[4];
+        return {
+            x: oldTouch[0],
+            y: oldTouch[1],
+            id: oldTouch[2],
+            time: oldTouch[3],
+            vel: vel ? [vel.x, vel.y] : null,
+        };
+    }
+
+    /**
+     * @param {string} stage
+     * @param {import('eskv/lib/modules/input.js').Touch} touch
+     * @param {boolean} handled
+     * @param {boolean=} force
+     */
+    logDrag(stage, touch, handled, force = false) {
+        if (!this.dragDebug) return;
+        const now = Date.now();
+        if (!force && now - this.lastDragLogTime < 40) return;
+        this.lastDragLogTime = now;
+        const local = touch.asChildTouch(this);
+        console.log(`[MapScrollView.drag.${stage}]`, {
+            handled,
+            id: touch.identifier,
+            appPos: [touch.x, touch.y],
+            childPos: [local.x, local.y],
+            scroll: { targetX: this.scrollX, targetY: this.scrollY, actualX: this._scrollX, actualY: this._scrollY },
+            zoom: this.zoom,
+            oldTouch: this.summarizeOldTouch(),
+            vel: this.vel ? [this.vel.x, this.vel.y] : null,
+            buttons: touch.nativeObject instanceof MouseEvent ? touch.nativeObject.buttons : undefined,
+        });
+    }
+
+    on_touch_down(event, object, touch) {
+        const handled = super.on_touch_down(event, object, touch);
+        this.logDrag('down', touch, handled, true);
+        return handled;
+    }
+
+    on_touch_move(event, object, touch) {
+        const beforeChild = touch.asChildTouch(this);
+        const beforeScroll = { targetX: this.scrollX, targetY: this.scrollY, actualX: this._scrollX, actualY: this._scrollY };
+        const beforeOldTouch = this.summarizeOldTouch();
+        const handled = super.on_touch_move(event, object, touch);
+        if (this.dragDebug) {
+            const afterChild = touch.asChildTouch(this);
+            const tileStep = 1 / Math.max(1, eskv.App.get().tileSize);
+            console.log('[MapScrollView.drag.move.delta]', {
+                handled,
+                id: touch.identifier,
+                beforeChildPos: [beforeChild.x, beforeChild.y],
+                afterChildPos: [afterChild.x, afterChild.y],
+                deltaChildPos: [afterChild.x - beforeChild.x, afterChild.y - beforeChild.y],
+                beforeScroll,
+                afterScroll: { targetX: this.scrollX, targetY: this.scrollY, actualX: this._scrollX, actualY: this._scrollY },
+                beforeOldTouch,
+                afterOldTouch: this.summarizeOldTouch(),
+                tileSnapStep: tileStep,
+                viewPos: [this.x, this.y],
+                viewSize: [this.w, this.h],
+            });
+        }
+        this.logDrag('move', touch, handled);
+        return handled;
+    }
+
+    on_touch_up(event, object, touch) {
+        const handled = super.on_touch_up(event, object, touch);
+        this.logDrag('up', touch, handled, true);
+        return handled;
+    }
+
+    on_touch_cancel(event, object, touch) {
+        const handled = super.on_touch_cancel(event, object, touch);
+        this.logDrag('cancel', touch, handled, true);
+        return handled;
+    }
+
+    on_wheel(event, object, touch) {
+        const app = eskv.App.get();
+        if (!app.inputHandler) return true;
+        if (!this.collide(touch.rect) && (!this.unboundedW || !this.unboundedH)) return false;
+        const wheel = touch.nativeObject;
+        if (!(wheel instanceof WheelEvent)) return false;
+        if (this.uiZoom && app.inputHandler.isKeyDown('Control')) {
+            return super.on_wheel(event, object, touch);
+        }
+        if (!this.uiMove) return false;
+        const canScrollX = this.scrollW && (this.scrollableW > 0 || this.unboundedW);
+        const canScrollY = this.scrollH && (this.scrollableH > 0 || this.unboundedH);
+        const shiftHorizontal = app.inputHandler.isKeyDown('Shift') && Math.abs(wheel.deltaX) < 1e-6;
+        const deltaX = shiftHorizontal ? wheel.deltaY : wheel.deltaX;
+        const deltaY = shiftHorizontal ? 0 : wheel.deltaY;
+        let handled = false;
+        if (canScrollX && Math.abs(deltaX) > 1e-6) {
+            this.scrollX += this.w / this.zoom * (deltaX / app.w);
+            if (this.scrollX !== this._scrollX) this.scrollX = this._scrollX;
+            handled = true;
+        }
+        if (canScrollY && Math.abs(deltaY) > 1e-6) {
+            this.scrollY += this.h / this.zoom * (deltaY / app.h);
+            if (this.scrollY !== this._scrollY) this.scrollY = this._scrollY;
+            handled = true;
+        }
+        return handled;
+    }
+}
+
 class Game extends eskv.App {
     /** @type {GameState|null} */
     gameState = null;
     /** @type {boolean} */
     debugOverlayVisible = false;
+    /** @type {boolean} */
+    pendingCameraSync = true;
     constructor(props={}) {
         super();
         if (this.inputHandler) {
@@ -298,9 +420,14 @@ class Game extends eskv.App {
         this.gameState = state;
         return state;
     }
+    update(app, millis) {
+        super.update(app, millis);
+        if (!this.pendingCameraSync) return;
+        this.pendingCameraSync = !this.updateCameraFromGameState();
+    }
     syncUiWithGameState() {
         const state = this.getGameState();
-        const view = state.getView();
+        const view = state.helpers.view.getView();
         const globalHeaderLabel = /**@type {eskv.Label}*/(this.findById('globalHeaderLabel'));
         const levelName = `Mansion ${view.missionIndex + 1}`;
         const activeName = view.activeCharacterId === 'none'
@@ -311,7 +438,7 @@ class Game extends eskv.App {
             : view.missionStatus === 'success'
                 ? ' | COMPLETE'
                 : '';
-        globalHeaderLabel.text = `${levelName} | T${view.timelineTurn}#${view.timelineTick} | Active: ${activeName}${gameStateTag}`;
+        globalHeaderLabel.text = `${levelName} | T${view.timelineTurn} | Active: ${activeName} | Actions This Turn: ${view.activeTurnActionsTaken}/${view.activeTurnActionLimit}${gameStateTag}`;
         const headerPromptLabel = /**@type {eskv.Label}*/(this.findById('headerPromptLabel'));
         if (headerPromptLabel) {
             if (view.awaitingSelection) {
@@ -339,11 +466,7 @@ class Game extends eskv.App {
             const byIcon = new Map();
             for (const action of character.actions) {
                 const key = action.keyControl ? action.keyControl.toUpperCase() : '?';
-                const verb = action.keyControl === 'f' ? 'Fire'
-                    : action.keyControl === 'g' ? 'Arrest'
-                        : action.keyControl === 't' ? 'Takedown'
-                            : action.keyControl === 'c' ? 'Noise'
-                                : action.name;
+                const verb = action.name;
                 const iconFrames = Array.isArray(action?.sprite?.frames) ? action.sprite.frames : [736];
                 const iconKey = iconFrames.join(',');
                 let group = byIcon.get(iconKey);
@@ -388,8 +511,11 @@ class Game extends eskv.App {
         /** @returns {eskv.Widget[]} */
         const buildMariaOrderContent = () => {
             const column = eskv.BoxLayout.a({ orientation: 'vertical', hints: { w: 1, h: 1 } });
+            const mariaOrderLines = maria
+                ? [...maria.actions].map((action) => `${action.name} [${action.keyControl ? action.keyControl.toUpperCase() : '?'}]`)
+                : [];
             const orders = eskv.Label.a({
-                text: 'Orders (Shift)\nFire [F]\nArrest [G]\nTakedown [T]\nNoise [C]',
+                text: `Orders (Shift)\n${mariaOrderLines.join('\n')}`,
                 wrap: true,
                 align: 'left',
                 sizeGroup: 'uiBody',
@@ -430,6 +556,7 @@ class Game extends eskv.App {
         }
         const ps = mmap.positionSelector;
         ps.validCells = view.selectorCells;
+        ps.cellLabels = view.selectorCellLabels ?? [];
         ps.activeCell = view.selectorIndex;
         ps.selectionKind = view.selectionKind === 'order' ? 'order' : 'action';
         mmap.setObligationOverlayData({
@@ -439,27 +566,38 @@ class Game extends eskv.App {
             randyEchoPos: view.randyEchoPos,
             randyPath: view.randyPath,
             obligationObjectives: view.obligationObjectives,
+            showPatrolRoutes: view.showPatrolRoutes,
+            patrolRoutes: view.patrolRoutes,
             enemyIntents: view.enemyIntents,
         });
     }
+    /** @returns {boolean} */
     updateCameraFromGameState() {
         const camera = /**@type {eskv.ScrollView|null}*/(this.findById('scroller'));
         const mmap = this.getMissionMap();
         const active = mmap.activeCharacter;
-        if(!camera || !active) return;
+        if(!camera || !active) return false;
+        const zoom = camera.zoom > 0 ? camera.zoom : 1;
+        const viewportW = camera.w / zoom;
+        const viewportH = camera.h / zoom;
+        if (viewportW <= 0 || viewportH <= 0) return false;
         const target = active.gpos.add([0.5, 0.5]);
-        let scrollX = Math.min(Math.max(target[0]-camera.w/camera.zoom/2, 0), mmap.w);
-        let scrollY = Math.min(Math.max(target[1]-camera.h/camera.zoom/2, 0), mmap.h);
+        const maxScrollX = Math.max(0, mmap.w - viewportW);
+        const maxScrollY = Math.max(0, mmap.h - viewportH);
+        let scrollX = Math.min(Math.max(target[0] - viewportW / 2, 0), maxScrollX);
+        let scrollY = Math.min(Math.max(target[1] - viewportH / 2, 0), maxScrollY);
         const ts = eskv.App.get().tileSize;
         scrollX = Math.floor(scrollX*ts)/ts;
         scrollY = Math.floor(scrollY*ts)/ts;
         camera.scrollX = scrollX;
         camera.scrollY = scrollY;
+        return true;
     }
     on_key_down(e, o, v) {
         const rawKey = v?.event?.key;
         if(typeof rawKey!=='string') return;
         const key = rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
+        if (key === 'Shift' || key === 'Control' || key === 'Alt' || key === 'Meta') return;
         const shift = Boolean(v?.event?.shiftKey);
         const state = this.getGameState();
         if (key==='\\') {
@@ -469,42 +607,62 @@ class Game extends eskv.App {
             return;
         }
         if (key==='l') {
-            state.toggleFullVision();
+            state.helpers.view.toggleFullVision();
+            this.syncUiWithGameState();
+            this.updateCameraFromGameState();
+            return;
+        }
+        if (key==='p') {
+            state.helpers.view.togglePatrolRoutes();
             this.syncUiWithGameState();
             this.updateCameraFromGameState();
             return;
         }
         if (key==='o') {
-            state.dispatchIntent({type:'startObligationLoop'});
+            state.helpers.timeline.dispatchIntent({type:'startObligationLoop'});
             this.syncUiWithGameState();
             this.updateCameraFromGameState();
             return;
         }
-        if (state.isAwaitingSelection()) {
-            if (key==='w') state.dispatchIntent({type:'moveSelection', direction: Facing.north});
-            else if (key==='a') state.dispatchIntent({type:'moveSelection', direction: Facing.west});
-            else if (key==='s') state.dispatchIntent({type:'moveSelection', direction: Facing.south});
-            else if (key==='d') state.dispatchIntent({type:'moveSelection', direction: Facing.east});
-            else if (key==='e' || key==='Enter') state.dispatchIntent({type:'confirmSelection'});
-            else if (key==='Escape' || key==='Backspace') state.dispatchIntent({type:'cancelSelection'});
-            else if (key==='f' || key==='g' || key==='t' || key==='c') {
-                state.dispatchIntent({type:'cancelSelection'});
-                state.dispatchIntent({type:'startActionFromKey', key});
+        if (state.helpers.timeline.isAwaitingSelection()) {
+            const orderable = typeof state.helpers.timeline.isSupportedRequestKey === 'function'
+                ? state.helpers.timeline.isSupportedRequestKey(key)
+                : false;
+            if (key==='w') state.helpers.timeline.dispatchIntent({type:'moveSelection', direction: Facing.north});
+            else if (key==='a') state.helpers.timeline.dispatchIntent({type:'moveSelection', direction: Facing.west});
+            else if (key==='s') state.helpers.timeline.dispatchIntent({type:'moveSelection', direction: Facing.south});
+            else if (key==='d') state.helpers.timeline.dispatchIntent({type:'moveSelection', direction: Facing.east});
+            else if (key==='e' || key==='Enter') state.helpers.timeline.dispatchIntent({type:'confirmSelection'});
+            else if (key==='Escape' || key==='Backspace') state.helpers.timeline.dispatchIntent({type:'cancelSelection'});
+            else if (shift && orderable) {
+                state.helpers.timeline.dispatchIntent({type:'cancelSelection'});
+                state.helpers.timeline.dispatchIntent({type:'requestActionFromKey', key});
+            }
+            else if (this.getMissionMap().activeCharacter?.getActionForKey?.(key)) {
+                state.helpers.timeline.dispatchIntent({type:'cancelSelection'});
+                state.helpers.timeline.dispatchIntent({type:'startActionFromKey', key});
             }
                 else return;
         } else {
-            const requestable = key==='f' || key==='g' || key==='t' || key==='c';
+            const active = this.getMissionMap().activeCharacter;
+            const requestable = typeof state.helpers.timeline.isSupportedRequestKey === 'function'
+                ? state.helpers.timeline.isSupportedRequestKey(key)
+                : false;
             const queueRequest = shift && requestable;
-            if (key==='v') state.dispatchIntent({type:'debugRevealMap'});
-            else if (key==='[') state.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
-            else if (key===']') state.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
-            else if (queueRequest) state.dispatchIntent({type:'requestActionFromKey', key});
-            else if (key==='w') state.dispatchIntent({type:'move', direction: Facing.north});
-            else if (key==='a') state.dispatchIntent({type:'move', direction: Facing.west});
-            else if (key==='s') state.dispatchIntent({type:'move', direction: Facing.south});
-            else if (key==='d') state.dispatchIntent({type:'move', direction: Facing.east});
-            else if (key===' ') state.dispatchIntent({type:'rest'});
-            else state.dispatchIntent({type:'startActionFromKey', key});
+            if (key==='v') state.helpers.timeline.dispatchIntent({type:'debugRevealMap'});
+            else if (key==='[') state.helpers.timeline.dispatchIntent({type:'rewindToTick', tick: Math.max(0, state.timelineTick-1)});
+            else if (key===']') state.helpers.timeline.dispatchIntent({type:'rewindToTick', tick: Number.MAX_SAFE_INTEGER});
+            else if (queueRequest) state.helpers.timeline.dispatchIntent({type:'requestActionFromKey', key});
+            else if (key==='w') state.helpers.timeline.dispatchIntent({type:'move', direction: Facing.north});
+            else if (key==='a') state.helpers.timeline.dispatchIntent({type:'move', direction: Facing.west});
+            else if (key==='s') state.helpers.timeline.dispatchIntent({type:'move', direction: Facing.south});
+            else if (key==='d') state.helpers.timeline.dispatchIntent({type:'move', direction: Facing.east});
+            else if (key===' ') state.helpers.timeline.dispatchIntent({type:'rest'});
+            else {
+                const hasAction = active?.getActionForKey?.(key);
+                if (!hasAction) return;
+                state.helpers.timeline.dispatchIntent({type:'startActionFromKey', key});
+            }
         }
         this.syncUiWithGameState();
         this.updateCameraFromGameState();
@@ -513,6 +671,7 @@ class Game extends eskv.App {
 
 Game.registerClass('Action', ActionItem, 'Label');
 Game.registerClass('FPS', FPS, 'Label');
+Game.registerClass('MapScrollView', MapScrollView, 'ScrollView');
 Game.registerClass('Game', Game, 'App');
 Game.registerClass('MissionMap', MissionMap, 'Widget');
 Game.rules.add('Button', { canFocus: false });
@@ -526,7 +685,7 @@ const result = parse(markup);
 const game = Game.get()
 const mmap = /**@type {MissionMap}*/(game.findById('MissionMap'));
 const gameState = game.getGameState();
-gameState.setupLevel();
+gameState.helpers.setup.setupLevel();
 mmap.playerCharacters[0].actionInventory = game.findById('firstPlayerInventory');
 mmap.playerCharacters[1].actionInventory = game.findById('secondPlayerInventory');
 game.syncUiWithGameState();

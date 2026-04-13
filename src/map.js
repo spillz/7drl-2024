@@ -727,6 +727,8 @@ export class PositionSelector extends eskv.Widget {
     _validCells = [];
     /**@type {Character[]} */
     _validCharacters = [];
+    /** @type {string[]} */
+    cellLabels = [];
     /** @type {'action'|'order'} */
     selectionKind = 'action';
     /**@type {number} */
@@ -738,6 +740,7 @@ export class PositionSelector extends eskv.Widget {
     set validCharacters(value) {
         this._validCharacters = value;
         this._validCells = this.validCharacters.map((v)=>v.gpos);
+        this.cellLabels = this._validCells.map(() => '');
         this.setupValidCells();
     }
     get validCharacters() {
@@ -746,6 +749,7 @@ export class PositionSelector extends eskv.Widget {
     set validCells(value) {
         this._validCharacters = [];
         this._validCells = value;
+        this.cellLabels = this._validCells.map(() => '');
         this.setupValidCells();
     }
     get validCells() {
@@ -804,13 +808,32 @@ export class PositionSelector extends eskv.Widget {
     }
     draw(app, ctx) {
         super.draw(app, ctx);
+        const oldFill = ctx.fillStyle;
+        const oldFont = ctx.font;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        ctx.font = '0.22px monospace';
+        for (let i = 0; i < this._validCells.length; i++) {
+            const text = this.cellLabels[i];
+            if (!text) continue;
+            const pos = this._validCells[i];
+            ctx.fillStyle = 'rgba(12,12,20,0.82)';
+            ctx.fillRect(pos[0] + 0.58, pos[1] - 0.18, 0.56, 0.2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+            ctx.lineWidth = 0.03;
+            ctx.strokeRect(pos[0] + 0.58, pos[1] - 0.18, 0.56, 0.2);
+            ctx.fillStyle = 'rgba(235,245,255,0.98)';
+            ctx.fillText(text, pos[0] + 0.62, pos[1] - 0.03);
+        }
+        ctx.fillStyle = oldFill;
+        ctx.font = oldFont;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
         if (this.activeCell < 0 || this.activeCell >= this._validCells.length) return;
         const pos = this._validCells[this.activeCell];
         const color = this.selectionKind === 'order'
             ? 'rgba(255,190,70,0.98)'
             : 'rgba(90,220,255,0.96)';
-        const oldStroke = ctx.strokeStyle;
-        const oldLineWidth = ctx.lineWidth;
         ctx.strokeStyle = color;
         ctx.lineWidth = 0.08;
         ctx.strokeRect(pos[0] + 0.08, pos[1] + 0.08, 0.84, 0.84);
@@ -983,6 +1006,82 @@ export class TimelineBarOverlay extends eskv.Widget {
     }
 }
 
+export class PatrolRouteOverlay extends eskv.Widget {
+    /** @type {boolean} */
+    showRoutes = false;
+    /** @type {{id:string, role:'guard'|'scientist', points: Vec2[]}[]} */
+    routes = [];
+    constructor(props = {}) {
+        super();
+        if (props) this.updateProperties(props);
+    }
+    update(app, millis) {
+        super.update(app, millis);
+        const map = this.parent;
+        if (!(map instanceof eskv.Widget)) return;
+        this.x = 0;
+        this.y = 0;
+        this.w = map.w;
+        this.h = map.h;
+    }
+    /**
+     * @param {string} id
+     * @returns {string}
+     */
+    compactNpcLabel(id) {
+        if (id.startsWith('guard')) return `G${id.slice(5)}`;
+        if (id.startsWith('scientist')) return `S${id.slice(9)}`;
+        return id;
+    }
+    draw(app, ctx) {
+        if (!this.showRoutes || this.routes.length === 0) return;
+        const oldFill = ctx.fillStyle;
+        const oldStroke = ctx.strokeStyle;
+        const oldLineWidth = ctx.lineWidth;
+        const oldFont = ctx.font;
+        const oldDash = ctx.getLineDash();
+        for (const route of this.routes) {
+            if (route.points.length === 0) continue;
+            const isGuard = route.role === 'guard';
+            const routeStroke = isGuard ? 'rgba(255,180,78,0.76)' : 'rgba(84,220,255,0.76)';
+            const routeNode = isGuard ? 'rgba(255,215,145,0.9)' : 'rgba(174,242,255,0.9)';
+            if (route.points.length > 1) {
+                ctx.beginPath();
+                for (let i = 0; i < route.points.length; i++) {
+                    const point = route.points[i];
+                    const px = point[0] + 0.5;
+                    const py = point[1] + 0.5;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.setLineDash(isGuard ? [] : [0.15, 0.1]);
+                ctx.strokeStyle = routeStroke;
+                ctx.lineWidth = isGuard ? 0.09 : 0.07;
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            for (let i = 0; i < route.points.length; i++) {
+                const point = route.points[i];
+                const px = point[0] + 0.5;
+                const py = point[1] + 0.5;
+                ctx.beginPath();
+                ctx.fillStyle = i === 0 ? routeStroke : routeNode;
+                ctx.arc(px, py, i === 0 ? 0.13 : 0.08, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            const origin = route.points[0];
+            ctx.fillStyle = routeNode;
+            ctx.font = '0.2px monospace';
+            ctx.fillText(this.compactNpcLabel(route.id), origin[0] + 0.62, origin[1] + 0.38);
+        }
+        ctx.fillStyle = oldFill;
+        ctx.strokeStyle = oldStroke;
+        ctx.lineWidth = oldLineWidth;
+        ctx.font = oldFont;
+        ctx.setLineDash(oldDash);
+    }
+}
+
 export class AttackMapOverlay extends eskv.Widget {
     /** @type {{from: Vec2, to: Vec2, hit: boolean, attackerId: string, targetId: string, ttl: number}[]} */
     attackEvents = [];
@@ -1051,7 +1150,7 @@ export class AttackMapOverlay extends eskv.Widget {
 }
 
 export class IntentGlyphOverlay extends eskv.Widget {
-    /** @type {{id:string, position: Vec2, kind: 'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[]} */
+    /** @type {{id:string, position: Vec2, kind: 'attack'|'advance'|'search'|'patrol'|'post'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[]} */
     enemyIntents = [];
     constructor(props={}) {
         super();
@@ -1070,7 +1169,7 @@ export class IntentGlyphOverlay extends eskv.Widget {
      * @param {CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D} ctx
      * @param {number} cx
      * @param {number} cy
-     * @param {'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead'} kind
+     * @param {'attack'|'advance'|'search'|'patrol'|'post'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead'} kind
      * @param {string} color
      */
     drawSymbol(ctx, cx, cy, kind, color) {
@@ -1122,6 +1221,13 @@ export class IntentGlyphOverlay extends eskv.Widget {
             ctx.fill();
             ctx.beginPath();
             ctx.arc(cx + 0.16, cy + 0.02, 0.05, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (kind === 'post') {
+            ctx.beginPath();
+            ctx.rect(cx - 0.15, cy - 0.15, 0.3, 0.3);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, 0.05, 0, Math.PI * 2);
             ctx.fill();
         } else if (kind === 'passive') {
             ctx.beginPath();
@@ -1241,6 +1347,16 @@ export class MissionMap extends eskv.Widget {
     soundEvents = [];
     /** @type {{position: Vec2, radius: number, ttl: number, source: string}[]} */
     decoyEvents = [];
+    /** @type {{position: Vec2, maxRange: number, ttl: number, ageTurns: number, spreadPerTurn: number, source: string}[]} */
+    smokeClouds = [];
+    /** @type {Set<string>} */
+    smokeOccupiedKeys = new Set();
+    /** @type {{position: Vec2, ttlTurns: number, source: string, kind: 'breach'}[]} */
+    timedCharges = [];
+    /** @type {{source: string, doorPos: Vec2, sensorPos: Vec2, radius: number}[]} */
+    fiberCameras = [];
+    /** @type {Set<string>} */
+    activeDirectVisibleKeys = new Set();
     /** @type {{from: Vec2, to: Vec2, hit: boolean, attackerId: string, targetId: string, ttl: number}[]} */
     attackEvents = [];
     characters = [...this.enemies, ...this.playerCharacters]
@@ -1249,13 +1365,14 @@ export class MissionMap extends eskv.Widget {
     /**@type {SpriteSheet|null} */
     spriteSheet = null;
     obligationOverlay = ObligationMapOverlay.a();
+    patrolOverlay = PatrolRouteOverlay.a();
     intentOverlay = IntentGlyphOverlay.a();
     attackOverlay = AttackMapOverlay.a();
     timelineOverlay = TimelineBarOverlay.a();
     constructor(props=null) {
         super();
         this.positionSelector = PositionSelector.a()
-        this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters, this.obligationOverlay, this.intentOverlay, this.attackOverlay, this.timelineOverlay];
+        this.children = [this.tileMap, this.entities, this.positionSelector, ...this.enemies, ...this.playerCharacters, this.obligationOverlay, this.patrolOverlay, this.intentOverlay, this.attackOverlay, this.timelineOverlay];
         // this.rng.seed(100);
         if(props) this.updateProperties(props);
     }
@@ -1269,6 +1386,11 @@ export class MissionMap extends eskv.Widget {
         this.entities.children = [];
         this.soundEvents = [];
         this.decoyEvents = [];
+        this.smokeClouds = [];
+        this.smokeOccupiedKeys.clear();
+        this.timedCharges = [];
+        this.fiberCameras = [];
+        this.activeDirectVisibleKeys.clear();
         this.attackEvents = [];
         generateMansionMap(this, this.rng);
         this.playerCharacters[0].setupForLevelStart(this);
@@ -1356,14 +1478,18 @@ export class MissionMap extends eskv.Widget {
             if(e instanceof Entity && e.pos.equals(pos)) sight &= e.allowsSight;
         }
         this.metaTileMap.setInLayer(MetaLayers.allowsSight, pos, sight);
+        this.recomputeSmokeCoverage();
         
     }
     updateClipRegion(scroller) {
+        const pad = 2;
+        const viewportW = Math.ceil(scroller.w / scroller.zoom);
+        const viewportH = Math.ceil(scroller.h / scroller.zoom);
         this.tileMap.clipRegion = new Rect([
-            Math.floor(scroller._scrollX), 
-            Math.floor(scroller._scrollY), 
-            Math.ceil(scroller.w/scroller.zoom), 
-            Math.ceil(scroller.h/scroller.zoom)
+            Math.floor(scroller._scrollX) - pad,
+            Math.floor(scroller._scrollY) - pad,
+            viewportW + pad * 2 + 1,
+            viewportH + pad * 2 + 1,
         ]);
     }
     /**
@@ -1376,6 +1502,29 @@ export class MissionMap extends eskv.Widget {
             if(refresh) e.visibleToPlayer = false;
             e.visibleToPlayer = e.visibleToPlayer || this.activeCharacter?._visibleLayer.get(e.gpos)===1;
         }
+    }
+
+    captureActiveDirectVisibility() {
+        const visibleLayer = this.metaTileMap.layer[MetaLayers.visible];
+        this.activeDirectVisibleKeys.clear();
+        if (!visibleLayer) return;
+        for (const rawPos of visibleLayer.iterAll()) {
+            const pos = eskv.v2(rawPos);
+            if (visibleLayer.get(pos) > 0) {
+                this.activeDirectVisibleKeys.add(`${pos[0]},${pos[1]}`);
+            }
+        }
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} pos
+     * @returns {boolean}
+     */
+    canActivePlayerDirectlySee(pos) {
+        const x = Math.floor(pos[0]);
+        const y = Math.floor(pos[1]);
+        if (x < 0 || y < 0 || x >= this.w || y >= this.h) return false;
+        return this.activeDirectVisibleKeys.has(`${x},${y}`);
     }
     /**
      * 
@@ -1437,6 +1586,203 @@ export class MissionMap extends eskv.Widget {
     }
 
     /**
+     * @param {Vec2} position
+     * @param {number} radius
+     * @param {string} source
+     * @param {number=} ttl
+     */
+    emitSmoke(position, radius, source, ttl = 3) {
+        const maxRange = Math.max(1, Math.floor(radius));
+        const spreadTurns = 3;
+        const spreadPerTurn = Math.max(1, Math.ceil((maxRange - 1) / Math.max(1, spreadTurns - 1)));
+        this.smokeClouds.push({
+            position: position.add([0, 0]),
+            maxRange,
+            ttl,
+            ageTurns: 0,
+            spreadPerTurn,
+            source,
+        });
+        this.recomputeSmokeCoverage();
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} position
+     * @param {string} source
+     * @param {number=} delayTurns
+     * @returns {boolean}
+     */
+    armTimedBreachCharge(position, source, delayTurns = 2) {
+        const pos = eskv.v2([Math.floor(position[0]), Math.floor(position[1])]);
+        if (pos[0] < 0 || pos[1] < 0 || pos[0] >= this.w || pos[1] >= this.h) return false;
+        this.timedCharges = this.timedCharges.filter((charge) => !charge.position.equals(pos));
+        this.timedCharges.push({
+            position: pos.add([0, 0]),
+            ttlTurns: Math.max(1, Math.floor(delayTurns)),
+            source,
+            kind: 'breach',
+        });
+        return true;
+    }
+
+    /**
+     * Advance turn-based hazards once per full turn.
+     * @returns {{position: Vec2, source: string, kind: 'breach'}[]}
+     */
+    advanceTurnHazards() {
+        /** @type {{position: Vec2, source: string, kind: 'breach'}[]} */
+        const detonations = [];
+        const nextCharges = [];
+        for (const charge of this.timedCharges) {
+            const ttl = charge.ttlTurns - 1;
+            if (ttl <= 0) {
+                detonations.push({
+                    position: charge.position.add([0, 0]),
+                    source: charge.source,
+                    kind: charge.kind,
+                });
+                continue;
+            }
+            nextCharges.push({
+                position: charge.position.add([0, 0]),
+                ttlTurns: ttl,
+                source: charge.source,
+                kind: charge.kind,
+            });
+        }
+        this.timedCharges = nextCharges;
+        this.smokeClouds = this.smokeClouds
+            .map((cloud) => ({ ...cloud, ttl: cloud.ttl - 1, ageTurns: cloud.ageTurns + 1 }))
+            .filter((cloud) => cloud.ttl > 0);
+        this.recomputeSmokeCoverage();
+        return detonations;
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} pos
+     * @returns {boolean}
+     */
+    isSmokeAt(pos) {
+        const p = eskv.v2([Math.floor(pos[0]), Math.floor(pos[1])]);
+        return this.smokeOccupiedKeys.has(`${p[0]},${p[1]}`);
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} pos
+     * @returns {DoorWidget|null}
+     */
+    getDoorEntityAt(pos) {
+        for (const entity of this.entities.children) {
+            if (entity instanceof DoorWidget && entity.pos.equals(pos)) return entity;
+        }
+        return null;
+    }
+
+    /**
+     * @param {import('eskv/lib/eskv.js').VecLike} pos
+     * @returns {boolean}
+     */
+    canSmokeOccupyCell(pos) {
+        const x = Math.floor(pos[0]);
+        const y = Math.floor(pos[1]);
+        if (x < 0 || y < 0 || x >= this.w || y >= this.h) return false;
+        const layout = this.metaTileMap.layer[MetaLayers.layout];
+        const tile = layout.get([x, y]);
+        if (tile === LayoutTiles.wall || tile === LayoutTiles.window || tile === LayoutTiles.coveredWindow) {
+            return false;
+        }
+        const door = this.getDoorEntityAt([x, y]);
+        if (door && door.state === 'closed') return false;
+        return true;
+    }
+
+    recomputeSmokeCoverage() {
+        this.smokeOccupiedKeys.clear();
+        if (this.smokeClouds.length === 0) return;
+        const dirs = [FacingVec[0], FacingVec[1], FacingVec[2], FacingVec[3]];
+        for (const cloud of this.smokeClouds) {
+            const origin = eskv.v2([Math.floor(cloud.position[0]), Math.floor(cloud.position[1])]);
+            if (!this.canSmokeOccupyCell(origin)) continue;
+            const spreadRange = Math.min(cloud.maxRange, 1 + cloud.ageTurns * cloud.spreadPerTurn);
+            const visited = new Set([`${origin[0]},${origin[1]}`]);
+            /** @type {{pos: Vec2, dist:number}[]} */
+            const queue = [{ pos: origin, dist: 0 }];
+            let head = 0;
+            while (head < queue.length) {
+                const item = queue[head++];
+                const pos = item.pos;
+                const dist = item.dist;
+                this.smokeOccupiedKeys.add(`${pos[0]},${pos[1]}`);
+                if (dist >= spreadRange) continue;
+                for (const dir of dirs) {
+                    const npos = pos.add(dir);
+                    const key = `${npos[0]},${npos[1]}`;
+                    if (visited.has(key)) continue;
+                    if (!this.canSmokeOccupyCell(npos)) continue;
+                    visited.add(key);
+                    queue.push({ pos: npos, dist: dist + 1 });
+                }
+            }
+        }
+    }
+
+    /**
+     * Deploy a persistent fiber camera feed under a door.
+     * @param {string} source
+     * @param {import('eskv/lib/eskv.js').VecLike} observerPos
+     * @param {import('eskv/lib/eskv.js').VecLike} doorPos
+     * @param {number=} radius
+     * @returns {{source: string, doorPos: Vec2, sensorPos: Vec2, radius: number} | null}
+     */
+    deployFiberCamera(source, observerPos, doorPos, radius = 7) {
+        const door = eskv.v2([Math.floor(doorPos[0]), Math.floor(doorPos[1])]);
+        const observer = eskv.v2([Math.floor(observerPos[0]), Math.floor(observerPos[1])]);
+        const delta = door.sub(observer);
+        /** @type {Vec2[]} */
+        const candidateSteps = [];
+        if (Math.abs(delta[0]) >= Math.abs(delta[1])) {
+            const sx = Math.sign(delta[0]);
+            if (sx !== 0) candidateSteps.push(eskv.v2([sx, 0]));
+        }
+        if (Math.abs(delta[1]) >= Math.abs(delta[0])) {
+            const sy = Math.sign(delta[1]);
+            if (sy !== 0) candidateSteps.push(eskv.v2([0, sy]));
+        }
+        for (const step of [FacingVec[0], FacingVec[1], FacingVec[2], FacingVec[3]]) {
+            const candidate = eskv.v2(step);
+            if (!candidateSteps.some((s) => s.equals(candidate))) {
+                candidateSteps.push(candidate);
+            }
+        }
+        /** @type {Vec2[]} */
+        const candidates = [];
+        for (const step of candidateSteps) {
+            candidates.push(door.add(step));
+            candidates.push(door.sub(step));
+        }
+        let sensorPos = null;
+        for (const candidate of candidates) {
+            const x = candidate[0];
+            const y = candidate[1];
+            if (x < 0 || y < 0 || x >= this.w || y >= this.h) continue;
+            const traversible = this.metaTileMap.getFromLayer(MetaLayers.traversible, candidate);
+            if (typeof traversible !== 'number' || traversible <= 0) continue;
+            sensorPos = candidate.add([0, 0]);
+            break;
+        }
+        if (!sensorPos) return null;
+        this.fiberCameras = this.fiberCameras.filter((camera) => !camera.doorPos.equals(door));
+        const camera = {
+            source,
+            doorPos: door.add([0, 0]),
+            sensorPos: sensorPos.add([0, 0]),
+            radius,
+        };
+        this.fiberCameras.push(camera);
+        return camera;
+    }
+
+    /**
      * @param {Vec2} from
      * @param {Vec2} to
      * @param {boolean} hit
@@ -1463,7 +1809,9 @@ export class MissionMap extends eskv.Widget {
      *   randyEchoPos: import('eskv/lib/eskv.js').VecLike|null,
      *   randyPath: {turn:number, position:import('eskv/lib/eskv.js').VecLike}[],
      *   obligationObjectives: {turn:number, position:import('eskv/lib/eskv.js').VecLike, label:string, color?:string}[],
-     *   enemyIntents: {id:string, position:import('eskv/lib/eskv.js').VecLike, kind:'attack'|'advance'|'search'|'patrol'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[],
+     *   showPatrolRoutes: boolean,
+     *   patrolRoutes: {id:string, role:'guard'|'scientist', points:import('eskv/lib/eskv.js').VecLike[]}[],
+     *   enemyIntents: {id:string, position:import('eskv/lib/eskv.js').VecLike, kind:'attack'|'advance'|'search'|'patrol'|'post'|'passive'|'flee'|'comply'|'arrested'|'down'|'dead', label:string, color:string}[],
      * }} value
      */
     setObligationOverlayData(value) {
@@ -1482,6 +1830,12 @@ export class MissionMap extends eskv.Widget {
         this.timelineOverlay.replayMode = value.replayMode;
         this.timelineOverlay.timelineTurn = value.timelineTurn;
         this.timelineOverlay.obligationTurns = value.obligationTurns.slice();
+        this.patrolOverlay.showRoutes = value.showPatrolRoutes;
+        this.patrolOverlay.routes = value.patrolRoutes.map((route) => ({
+            id: route.id,
+            role: route.role,
+            points: route.points.map((point) => eskv.v2(point)),
+        }));
         this.intentOverlay.enemyIntents = value.enemyIntents.map((intent) => ({
             id: intent.id,
             position: eskv.v2(intent.position),

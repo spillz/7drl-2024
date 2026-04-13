@@ -227,6 +227,8 @@ export class Character extends Entity {
     /** @type {[ActionItem, import("./action.js").ActionResponseData][]} */
     history = [];
     suppressed = false;
+    /** Steady-aim bonus multiplier for firearm hit chance. */
+    aimMultiplier = 1;
     /**Cumulative # of actions where the character's movement has been impeded */
     movementBlockedCount = 0;
     /**@type {Set<eskv.Vec2>} */
@@ -295,8 +297,14 @@ export class Character extends Entity {
         const sightMap = map.metaTileMap.layer[MetaLayers.allowsSight]
         const coverMap = map.metaTileMap.layer[MetaLayers.cover]
         const w = sightMap.tileDim[0];
+        const adjacent = this.gpos.dist(character.gpos) <= 1.5;
         let cover = false;
-        for(let pos of sightMap.iterInBetween(this.gpos, character.gpos)) {
+        for(let rawPos of sightMap.iterInBetween(this.gpos, character.gpos)) {
+            const pos = eskv.v2(rawPos);
+            const smokeBlocks = map.isSmokeAt(pos)
+                && !pos.equals(this.gpos)
+                && !(adjacent && pos.equals(character.gpos));
+            if (smokeBlocks) return false;
             if(sightMap[pos[0]+pos[1]*w]===0 || cover) return false;
             cover = coverMap[pos[0]+pos[1]*w]>0?true:false;
         }
@@ -316,6 +324,7 @@ export class Character extends Entity {
         this.health = this.maxHealth;
         this.suppressionLevel = 0;
         this.suppressed = false;
+        this.aimMultiplier = 1;
         let i = 0;
         let a = eskv.vec2(1,1);
         let b = eskv.vec2(1,1);
@@ -356,6 +365,7 @@ export class Character extends Entity {
         this.health = this.maxHealth;
         this.suppressionLevel = 0;
         this.suppressed = false;
+        this.aimMultiplier = 1;
         this.animationState = 'standing';
     }
     /**
@@ -399,6 +409,7 @@ export class Character extends Entity {
             // Preserve current rendered position so chaining turns does not snap to stale logical tile state.
             this.pos = eskv.v2([this.x, this.y]);
             this.gpos = npos;
+            this.aimMultiplier = 1;
             const anim = new eskv.WidgetAnimation();
             anim.add({ x: this.gpos[0], y: this.gpos[1]}, 300);
             anim.start(this);
@@ -509,7 +520,8 @@ export class Character extends Entity {
                 else if(dir[1]>0 && dir[0]<0   && (sight0&0b0100 && sight1&0b0001 && sight0&0b1000 && sight1&0b0010)) canContinue = true; //SW
                 else if(dir[0]<0 && dir[1]===0 && sight0&0b1000 && sight1&0b0010) canContinue = true; //W
                 else if(dir[1]<0 && dir[0]<0   && (sight0&0b0001 && sight1&0b0100 && sight0&0b1000 && sight1&0b0010)) canContinue = true; //NW
-                if(canContinue && !coversNext) {
+                const smokeAtP0 = map.isSmokeAt(p0);
+                if(canContinue && !coversNext && !smokeAtP0) {
                     this._visibleLayer[p0[0]+p0[1]*mmap.w] = 1;
                     if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);
                 } else {
@@ -518,6 +530,11 @@ export class Character extends Entity {
                         if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);                        
                     }
                     this._coverPositions.add(p0);
+                }
+                if (smokeAtP0) {
+                    this._visibleLayer[p0[0]+p0[1]*mmap.w] = 1;
+                    if(this.activeCharacter) mmap.setInLayer(MetaLayers.seen, p0, 1);
+                    break;
                 }
                 if(!canContinue) break;
                 coversNext = false;
@@ -594,7 +611,20 @@ export class Character extends Entity {
     draw(app, ctx) {
         if(this.activeCharacter || this.visibleToPlayer) {
             super.draw(app, ctx);
+            return;
         }
+        const isStandbyMaria = this.id === 'maria'
+            && !this.activeCharacter
+            && this.state !== 'dead'
+            && this.health > 0;
+        if (!isStandbyMaria) return;
+        const gameApp = /** @type {{gameState?: {replayMode?: boolean}}} */ (app);
+        if (Boolean(gameApp.gameState?.replayMode)) return;
+        // Render Maria as a ghosted standby marker so her occupied tile is legible during Randy run.
+        const previousAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = previousAlpha * 0.35;
+        super.draw(app, ctx);
+        ctx.globalAlpha = previousAlpha;
     }
 
 }
@@ -622,6 +652,7 @@ export class PlayerCharacter extends Character {
         this.suppressibility = 0.9;
         this.suppressionLevel = 0;
         this.suppressed = false;
+        this.aimMultiplier = 1;
         this.animationGroup = characterAnimations[this.id];
         this.animationState = 'standing';
         if(this.activeCharacter) {
