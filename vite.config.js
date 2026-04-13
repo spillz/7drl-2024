@@ -34,5 +34,6 @@ export default {
     build: {
       target: 'es2022', //es2019
       minify: false,
+      sourcemap: true,
     }
 };
